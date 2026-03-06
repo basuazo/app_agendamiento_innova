@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../server/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REJECTED
+}
+
+enum BookingPurpose {
+  LEARN
+  PRODUCE
+  DESIGN
+  REUNION
+}
+
+enum CommentTag {
+  GENERAL
+  MACHINE_ISSUE
+  ORDER
+  CLEANING
+}
+
+enum ResourceCategory {
+  RECTA_CASERA
+  OVERLOCK_CASERA
+  COLLERETERA
+  BORDADORA
+  IMPRESORA_SUBLIMACION
+  PLOTTER_CORTE
+  PLANCHA_SUBLIMACION
+  INDUSTRIAL
+  PLANCHA_VAPOR
+  MESON_CORTE
+  ESPACIO_REUNION
+}
+
+enum CertReqStatus {
+  PENDING
+  SCHEDULED
+  APPROVED
+  REJECTED
+}
+
+enum CompanionRelation {
+  CUIDADOS
+  AMISTAD
+  OTRO
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String
+  email            String    @unique
+  password         String
+  role             Role      @default(USER)
+  isVerified       Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  bookings              Booking[]
+  comments              Comment[]
+  trainingsCreated      Training[]            @relation("TrainingCreator")
+  certifications        Certification[]       @relation("UserCertifications")
+  certificationsMade    Certification[]       @relation("CertifierCertifications")
+  certificationRequests CertificationRequest[] @relation("UserCertRequests")
+  auditLogs             AuditLog[]            @relation("AuditLogs")
+}
+
+model Resource {
+  id                    String           @id @default(cuid())
+  name                  String
+  description           String?
+  category              ResourceCategory
+  requiresCertification Boolean          @default(true)
+  capacity              Int              @default(1)
+  imageUrl              String?
+  isActive              Boolean          @default(true)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  bookings           Booking[]
+  trainingExemptions TrainingExemption[]
+}
+
+model Booking {
+  id                    String         @id @default(cuid())
+  userId                String
+  resourceId            String
+  startTime             DateTime
+  endTime               DateTime
+  notes                 String?
+  purpose               BookingPurpose
+  produceItem           String?
+  produceQty            Int?
+  quantity              Int                @default(1)
+  isPrivate             Boolean            @default(false)
+  attendees             Int                @default(1)
+  companionRelation     CompanionRelation?
+  status                BookingStatus      @default(CONFIRMED)
+  googleCalendarEventId String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id])
+  resource Resource @relation(fields: [resourceId], references: [id])
+
+  @@index([userId])
+  @@index([resourceId])
+  @@index([status])
+  @@index([startTime, endTime])
+}
+
+model Training {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  createdBy   String
+  createdAt   DateTime  @default(now())
+
+  creator    User                @relation("TrainingCreator", fields: [createdBy], references: [id])
+  exemptions TrainingExemption[]
+}
+
+model TrainingExemption {
+  id         String @id @default(cuid())
+  trainingId String
+  resourceId String
+
+  training Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id])
+
+  @@unique([trainingId, resourceId])
+}
+
+model Comment {
+  id        String     @id @default(cuid())
+  userId    String
+  content   String
+  tag       CommentTag @default(GENERAL)
+  imageUrl  String?
+  createdAt DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Certification {
+  id               String           @id @default(cuid())
+  userId           String
+  resourceCategory ResourceCategory
+  certifiedAt      DateTime         @default(now())
+  certifiedById    String
+  notes            String?
+
+  user      User @relation("UserCertifications", fields: [userId], references: [id])
+  certifier User @relation("CertifierCertifications", fields: [certifiedById], references: [id])
+
+  @@unique([userId, resourceCategory])
+}
+
+model CertificationRequest {
+  id               String        @id @default(cuid())
+  userId           String
+  resourceCategory ResourceCategory
+  status           CertReqStatus @default(PENDING)
+  scheduledDate    DateTime?
+  notes            String?
+  resolvedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  user User @relation("UserCertRequests", fields: [userId], references: [id])
+
+  @@unique([userId, resourceCategory])
+  @@index([userId])
+  @@index([status])
+}
+
+enum AuditAction {
+  USER_CREATED
+  USER_DELETED
+  USER_ROLE_CHANGED
+  USER_VERIFIED
+  BOOKING_APPROVED
+  BOOKING_REJECTED
+  BOOKING_CANCELLED
+  CERT_REQUEST_APPROVED
+  CERT_REQUEST_REJECTED
+  CERTIFICATION_REVOKED
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorId    String
+  action     AuditAction
+  targetType String
+  targetId   String
+  meta       Json        @default("{}")
+  createdAt  DateTime    @default(now())
+
+  actor User @relation("AuditLogs", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model BusinessHours {
+  id        String   @id @default(cuid())
+  dayOfWeek Int      // 0=Domingo, 1=Lunes, ..., 6=Sábado
+  isOpen    Boolean  @default(true)
+  openTime  String   // "09:00"
+  closeTime String   // "17:00"
+  updatedAt DateTime @updatedAt
+
+  @@unique([dayOfWeek])
+}
