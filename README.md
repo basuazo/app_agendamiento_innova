@@ -6,8 +6,9 @@ Aplicación web full-stack para gestionar reservas de máquinas textiles y espac
 
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS + FullCalendar + Zustand
 - **Backend**: Node.js + Express + TypeScript
-- **Base de datos**: PostgreSQL + Prisma ORM
+- **Base de datos**: PostgreSQL + Prisma ORM (Neon en producción, Docker local)
 - **Auth**: JWT + bcrypt
+- **Hosting**: Render (Web Service)
 - **Google Calendar**: API con Service Account (opcional)
 
 ---
@@ -103,9 +104,25 @@ npm run dev
 |-----|-------------|
 | `SUPER_ADMIN` | Gestiona todos los espacios. Selecciona el espacio activo en el Navbar. Sin spaceId propio. |
 | `ADMIN` | Administra su espacio: usuarios, recursos, categorías, reservas, certificaciones, horarios. |
+| `LIDER_TECNICA` | Gestiona certificaciones, capacitaciones y recursos. Sin acceso a usuarios, reservas ni categorías. |
+| `LIDER_COMUNITARIA` | Aprueba reservas, gestiona categorías y recursos, verifica nuevos usuarios. |
 | `USER` | Reserva máquinas, solicita certificaciones, accede a la comunidad. |
 
-El registro de nuevos usuarios queda en estado **pendiente** hasta que un admin lo verifique.
+**Matriz de permisos resumida:**
+
+| Acción | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA |
+|--------|:-----:|:-------------:|:-----------------:|
+| Gestionar recursos | ✓ | ✓ | ✓ |
+| Gestionar categorías | ✓ | — | ✓ |
+| Certificaciones (admin) | ✓ | ✓ | — |
+| Capacitaciones | ✓ | ✓ | — |
+| Aprobar/rechazar reservas | ✓ | — | ✓ |
+| Ver todas las reservas | ✓ | — | ✓ |
+| Ver y verificar usuarios | ✓ | — | ✓ |
+| Crear/editar/eliminar usuarios | ✓ | — | — |
+| Configurar horarios | ✓ | — | — |
+
+El registro de nuevos usuarios queda en estado **pendiente** hasta que un admin o Líder Comunitaria lo verifique.
 
 ---
 
@@ -123,12 +140,14 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 
 ## Features principales
 
-- **Calendario de reservas**: vista semanal con slots por hora. Click en celda para reservar, click en slot ocupado para ver detalle. Horario configurable por espacio (BusinessHours).
-- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
-- **Capacitaciones**: el admin bloquea rangos horarios de recursos para sesiones de capacitación.
+- **Calendario de reservas**: vista semanal. Click en celda para reservar, click en slot ocupado para ver detalle o crear nueva reserva encima. Horario configurable por espacio (BusinessHours). Tiempo libre de hasta 4 horas por reserva.
+- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
+- **Capacitaciones**: el admin/Líder Técnica bloquea rangos horarios de recursos para sesiones de capacitación.
+- **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina, sin pregunta de acompañantes.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
-- **Tablas admin ordenables**: todas las tablas admin permiten ordenar A→Z / Z→A por cualquier columna y filtrar con búsqueda de texto en tiempo real.
-- **Admin agenda por usuaria**: el administrador puede crear reservas a nombre de cualquier usuaria del espacio.
+- **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
+- **Roles jerárquicos**: cinco roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA, USER).
+- **Admin agenda por usuaria**: roles elevados pueden crear reservas a nombre de cualquier usuaria del espacio.
 - **Exportación**: las reservas se pueden exportar a Excel desde la vista de administrador.
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
@@ -194,3 +213,34 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Google Calendar sincroniza solo reservas CONFIRMED
 - Máximo **10 usuarias** por sesión de certificación
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
+
+---
+
+## Deploy en producción (Render + Neon)
+
+### Build Command
+```
+npm install && cd client && npm install && cd ../server && npm install && npx prisma generate && npx prisma migrate deploy --schema=../prisma/schema.prisma && cd .. && npm run build:prod
+```
+
+### Start Command
+```
+npm run start
+```
+
+### Variables de entorno requeridas en Render
+
+| Variable | Valor |
+|---|---|
+| `DATABASE_URL` | URL de Neon (`postgresql://...?sslmode=require`) |
+| `JWT_SECRET` | cadena aleatoria larga (mín. 32 chars) |
+| `JWT_EXPIRES_IN` | `7d` |
+| `NODE_ENV` | `production` |
+| `PORT` | `3001` |
+| `CLIENT_URL` | URL asignada por Render |
+| `NPM_CONFIG_PRODUCTION` | `false` |
+
+### Notas
+- `client/.npmrc` y `server/.npmrc` incluyen `production=false` para que `npm install` instale devDependencies durante el build.
+- Las migraciones se aplican automáticamente en cada deploy.
+- El plan gratuito de Render hiberna el servicio tras 15 min de inactividad — el primer request puede tardar ~30 seg.

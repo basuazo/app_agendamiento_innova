@@ -4,6 +4,7 @@ import { Booking, ResourceAvailability } from '../types';
 export interface CreateBookingDto {
   resourceId: string;
   startTime: string;
+  endTime: string;
   purpose: 'LEARN' | 'PRODUCE' | 'DESIGN' | 'REUNION';
   produceItem?: string;
   produceQty?: number;

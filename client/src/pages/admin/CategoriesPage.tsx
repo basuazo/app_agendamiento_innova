@@ -163,7 +163,8 @@ export default function CategoriesPage() {
             No hay categorías creadas aún.
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <SortableHeader label="Categoría" sortKey="name" sort={sort} onSort={handleSort} className="text-left" />
@@ -224,6 +225,7 @@ export default function CategoriesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

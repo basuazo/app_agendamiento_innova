@@ -178,7 +178,7 @@ export default function BookingsPage() {
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <SortableHeader label="Recurso" sortKey="resource" sort={sort} onSort={handleSort} className="text-left" />

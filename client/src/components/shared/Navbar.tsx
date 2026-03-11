@@ -52,6 +52,16 @@ export default function Navbar() {
 
   const currentSpace = spaces.find((s) => s.id === currentSpaceId);
 
+  // Helpers de permisos por rol
+  const role = user?.role;
+  const isElevated       = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA' || role === 'LIDER_COMUNITARIA';
+  const canManageCerts   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA';
+  const canManageTrainings = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA';
+  const canManageCategories = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
+  const canManageUsers   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
+  const canManageBookings = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
+  const canManageSettings = role === 'ADMIN' || role === 'SUPER_ADMIN';
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -150,8 +160,8 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Menú Admin — controlado por estado */}
-            {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            {/* Menú Admin — visible a todos los roles elevados */}
+            {isElevated && (
               <div className="relative" ref={adminRef}>
                 <button
                   onClick={() => setAdminOpen((prev) => !prev)}
@@ -174,60 +184,52 @@ export default function Navbar() {
 
                 {adminOpen && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
-                    <Link
-                      to="/admin/categories"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-                      </svg>
-                      Categorías
-                    </Link>
-                    <Link
-                      to="/admin/resources"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
+                    {canManageCategories && (
+                      <Link to="/admin/categories" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                        Categorías
+                      </Link>
+                    )}
+                    <Link to="/admin/resources" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                       </svg>
                       Recursos
                     </Link>
-                    <Link
-                      to="/admin/users"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
-                      Usuarios
-                    </Link>
-                    <Link
-                      to="/admin/bookings"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Todas las Reservas
-                    </Link>
-                    <Link
-                      to="/admin/certifications"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                      </svg>
-                      Certificaciones
-                    </Link>
-                    <Link
-                      to="/admin/settings"
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      Horarios
-                    </Link>
+                    {canManageUsers && (
+                      <Link to="/admin/users" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                        Usuarios
+                      </Link>
+                    )}
+                    {canManageBookings && (
+                      <Link to="/admin/bookings" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Todas las Reservas
+                      </Link>
+                    )}
+                    {canManageCerts && (
+                      <Link to="/admin/certifications" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                        </svg>
+                        Certificaciones
+                      </Link>
+                    )}
+                    {canManageSettings && (
+                      <Link to="/admin/settings" className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Horarios
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>
@@ -239,7 +241,7 @@ export default function Navbar() {
             <Link to="/profile" className="text-right group">
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
               <p className="text-xs text-gray-500">
-                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_TECNICA' ? 'Líder Técnica' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
               </p>
             </Link>
             <button
@@ -272,7 +274,7 @@ export default function Navbar() {
 
       {/* Menú móvil desplegable */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-gray-100 bg-white shadow-lg">
+        <div className="md:hidden border-t border-gray-100 bg-white shadow-lg max-h-[calc(100dvh-4rem)] overflow-y-auto">
           <div className="px-4 py-3 space-y-1">
             <Link to="/calendar" className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
               location.pathname === '/calendar' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
@@ -295,7 +297,48 @@ export default function Navbar() {
               Certificaciones
             </Link>
 
-            {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
+            {/* Selector de espacio móvil — solo SUPER_ADMIN */}
+            {user?.role === 'SUPER_ADMIN' && spaces.length > 0 && (
+              <div className="px-3 py-2">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Espacio activo</p>
+                <div className="space-y-1">
+                  {spaces.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => { setCurrentSpace(s.id); setMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        currentSpaceId === s.id
+                          ? 'bg-purple-50 text-purple-700'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      {s.name}
+                      {currentSpaceId === s.id && (
+                        <svg className="w-3.5 h-3.5 ml-auto text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {user?.role === 'SUPER_ADMIN' && (
+              <Link
+                to="/superadmin/spaces"
+                className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  location.pathname === '/superadmin/spaces' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Espacios
+              </Link>
+            )}
+
+            {isElevated && (
               <div>
                 <button
                   onClick={() => setMobileAdminOpen((prev) => !prev)}
@@ -313,24 +356,39 @@ export default function Navbar() {
                 </button>
                 {mobileAdminOpen && (
                   <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
-                    <Link to="/admin/categories" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      Categorías
-                    </Link>
+                    {canManageCategories && (
+                      <Link to="/admin/categories" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Categorías
+                      </Link>
+                    )}
                     <Link to="/admin/resources" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                       Recursos
                     </Link>
-                    <Link to="/admin/users" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      Usuarios
-                    </Link>
-                    <Link to="/admin/bookings" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      Todas las Reservas
-                    </Link>
-                    <Link to="/admin/certifications" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      Certificaciones
-                    </Link>
-                    <Link to="/admin/settings" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                      Horarios
-                    </Link>
+                    {canManageUsers && (
+                      <Link to="/admin/users" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Usuarios
+                      </Link>
+                    )}
+                    {canManageBookings && (
+                      <Link to="/admin/bookings" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Todas las Reservas
+                      </Link>
+                    )}
+                    {canManageCerts && (
+                      <Link to="/admin/certifications" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Certificaciones
+                      </Link>
+                    )}
+                    {canManageTrainings && (
+                      <Link to="/calendar" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Capacitaciones
+                      </Link>
+                    )}
+                    {canManageSettings && (
+                      <Link to="/admin/settings" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        Horarios
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>
@@ -341,7 +399,7 @@ export default function Navbar() {
             <Link to="/profile" className="group" onClick={() => setMobileMenuOpen(false)}>
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
               <p className="text-xs text-gray-500">
-                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_TECNICA' ? 'Líder Técnica' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
               </p>
             </Link>
             <button

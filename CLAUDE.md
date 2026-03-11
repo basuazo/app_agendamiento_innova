@@ -9,7 +9,7 @@ Documento de referencia para Claude Code. Describe el estado actual del proyecto
 App full-stack de agendamiento de maquinas textiles para centros productivos de cowork. Las usuarias reservan maquinas de coser, bordadoras, plotters, planchas, etc. El sistema gestiona multiples espacios (centros productivos), categorias de maquinas dinamicas por espacio, certificaciones por categoria, aprobacion de usuarias nuevas, y sincronizacion opcional con Google Calendar.
 
 **Fecha de inicio:** febrero 2026
-**Estado actual:** desarrollo activo — rama `feature/multi-espacio` en curso
+**Estado actual:** desplegado en produccion — Render (backend + SPA) + Neon (PostgreSQL)
 
 ---
 
@@ -28,6 +28,8 @@ App full-stack de agendamiento de maquinas textiles para centros productivos de 
 | Logger | pino + pino-http |
 | Seguridad | helmet + express-rate-limit |
 | Google Calendar | googleapis (Service Account, sincronizacion opcional) |
+| Hosting | Render (Web Service, plan gratuito) |
+| BD en la nube | Neon (PostgreSQL serverless, plan gratuito) |
 
 ---
 
@@ -39,6 +41,7 @@ App para reservas/
 ├── .env.example                     <- variables de entorno de referencia
 ├── .gitignore
 ├── package.json                     <- scripts raiz (concurrently)
+├── render.yaml                      <- (opcional) config declarativa de Render
 ├── prisma/
 │   ├── schema.prisma                <- schema de BD (fuente de verdad)
 │   ├── seed.ts                      <- seed LEGACY (usar el de /server/)
@@ -46,6 +49,7 @@ App para reservas/
 ├── server/
 │   ├── package.json                 <- scripts server + config prisma
 │   ├── tsconfig.json
+│   ├── .npmrc                       <- production=false (para instalar devDeps en Render)
 │   ├── prisma/
 │   │   └── seed.ts                  <- seed REAL (ejecutar desde aqui)
 │   └── src/
@@ -83,6 +87,7 @@ App para reservas/
 └── client/
     ├── package.json
     ├── tsconfig.json
+    ├── .npmrc                       <- production=false (para instalar devDeps en Render)
     ├── vite.config.ts               <- outDir apunta a server/public
     ├── tailwind.config.ts
     └── src/
@@ -148,7 +153,7 @@ App para reservas/
 ## Comandos
 
 ```bash
-# Base de datos (Docker)
+# Base de datos local (Docker — solo desarrollo)
 docker compose up db -d        # levantar solo la BD en background
 docker compose ps              # verificar estado
 docker compose down            # detener contenedores
@@ -158,19 +163,53 @@ npm run dev            # cliente (5173) + servidor (3001) en paralelo
 npm run build:prod     # build completo: cliente -> server/public, servidor -> dist/
 npm run start          # inicia en produccion (requiere build previo)
 
-# Desde /server/
+# Desde /server/ (o desde la raiz con npm run seed)
 npm run seed           # poblar BD con datos de prueba
-cd server && npx prisma migrate dev --name <nombre>   # nueva migracion
-npm run db:migrate:prod                               # migrar en produccion
+                       # NOTA: usa dotenv con override:true → siempre lee server/.env
+                       # si DATABASE_URL esta en el sistema como var de entorno, se sobreescribe
+cd server && npx prisma migrate dev --name <nombre>   # nueva migracion (local)
+npm run db:migrate:prod                               # migrar en produccion (Neon)
 npx prisma migrate reset --force --skip-seed          # reset completo (borra datos)
 ```
+
+### Deploy en produccion (Render + Neon)
+
+**Build Command en Render:**
+```
+npm install && cd client && npm install && cd ../server && npm install && npx prisma generate && npx prisma migrate deploy --schema=../prisma/schema.prisma && cd .. && npm run build:prod
+```
+
+**Start Command en Render:**
+```
+npm run start
+```
+
+**Variables de entorno requeridas en Render:**
+
+| Variable | Valor |
+|---|---|
+| `DATABASE_URL` | URL de Neon con `?sslmode=require` |
+| `JWT_SECRET` | cadena aleatoria larga (min 32 chars) |
+| `JWT_EXPIRES_IN` | `7d` |
+| `NODE_ENV` | `production` |
+| `PORT` | `3001` |
+| `CLIENT_URL` | URL del servicio en Render |
+| `NPM_CONFIG_PRODUCTION` | `false` |
+
+**Migraciones:** se corren automaticamente en cada deploy via `prisma migrate deploy`.
+**Seed en produccion:** correr localmente apuntando a Neon via `server/.env`, o desde Render Shell.
 
 ---
 
 ## Variables de entorno (server/.env)
 
 ```env
-DATABASE_URL="postgresql://user:password@localhost:5432/cowork_db"
+# Local (Docker)
+DATABASE_URL="postgresql://postgres:cowork123@localhost:5432/cowork_db"
+
+# Produccion (Neon) — formato obligatorio con sslmode=require
+# DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require"
+
 JWT_SECRET="min_32_caracteres_cambiar_en_produccion"
 JWT_EXPIRES_IN="7d"
 PORT=3001
@@ -192,7 +231,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 |--------|------------|
 | `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios |
 | `Category` | Categoria de maquina dinamica, pertenece a un Space (reemplaza enum ResourceCategory) |
-| `User` | Usuarias con role SUPER_ADMIN/ADMIN/USER, isVerified, y spaceId (null para SUPER_ADMIN) |
+| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, y spaceId (null para SUPER_ADMIN) |
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
 | `Booking` | Reservas con status, purpose, campos especiales segun categoria |
 | `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria) |
@@ -206,7 +245,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 ### Enums
 
 ```
-Role:             SUPER_ADMIN | ADMIN | USER
+Role:             SUPER_ADMIN | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA | USER
 
 BookingStatus:    PENDING | CONFIRMED | CANCELLED | REJECTED
 BookingPurpose:   LEARN | PRODUCE | DESIGN | REUNION
@@ -239,12 +278,35 @@ AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIE
 ### Roles
 - `SUPER_ADMIN`: acceso a todos los espacios. No tiene spaceId propio. Selecciona el espacio activo en el Navbar.
 - `ADMIN`: administra su espacio. Tiene spaceId.
+- `LIDER_TECNICA`: gestiona certificaciones, capacitaciones y recursos. Tiene spaceId.
+- `LIDER_COMUNITARIA`: aprueba reservas, gestiona categorias y recursos, verifica usuarios. Tiene spaceId.
 - `USER`: usuaria del espacio al que pertenece.
+
+**Matriz de permisos de roles elevados:**
+
+| Endpoint / accion | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA |
+|---|:---:|:---:|:---:|
+| Recursos (CRUD) | ✓ | ✓ | ✓ |
+| Categorias (CRUD) | ✓ | — | ✓ |
+| Certificaciones (admin) | ✓ | ✓ | — |
+| Capacitaciones (crear/borrar) | ✓ | ✓ | — |
+| Reservas (aprobar/rechazar/ver todas) | ✓ | — | ✓ |
+| Usuarios (ver lista + verificar) | ✓ | — | ✓ |
+| Usuarios (crear/editar/borrar/rol) | ✓ | — | — |
+| Horarios de negocio | ✓ | — | — |
+| Agendar por otra usuaria (targetUserId) | ✓ | ✓ | ✓ |
+
+**Middlewares en `role.middleware.ts`:**
+- `requireAdmin` → ADMIN + SUPER_ADMIN
+- `requireTecnica` → ADMIN + SUPER_ADMIN + LIDER_TECNICA
+- `requireComunitaria` → ADMIN + SUPER_ADMIN + LIDER_COMUNITARIA
+- `requireElevated` → todos los roles no-USER
+- `requireAnyOf(...roles)` → factory generica
 
 ### Header X-Space-Id
 El frontend envia el header `X-Space-Id` automaticamente en cada request (via interceptor de axios). El backend usa `resolveSpaceId(req)` en `auth.middleware.ts` para determinar el espacio:
 - SUPER_ADMIN: usa el valor del header `X-Space-Id`
-- ADMIN/USER: usa su propio `req.user.spaceId`
+- Todos los demas roles: usan su propio `req.user.spaceId`
 
 ### Frontend: currentSpaceId
 - Guardado en `authStore.currentSpaceId` y `localStorage`
@@ -265,35 +327,42 @@ POST   /api/spaces                 <- crear espacio (superadmin)
 PUT    /api/spaces/:id             <- editar espacio (superadmin)
 DELETE /api/spaces/:id             <- eliminar espacio (superadmin)
 
-GET    /api/users                  <- lista usuarios (admin)
-PATCH  /api/users/:id              <- editar usuario, acepta password y spaceId
-PATCH  /api/users/:id/verify       <- verificar usuario (admin)
+GET    /api/users                  <- lista usuarios (admin + lider_comunitaria)
+POST   /api/users                  <- crear usuario (admin)
+PATCH  /api/users/:id              <- editar usuario, acepta password y spaceId (admin)
+PATCH  /api/users/:id/verify       <- verificar usuario (admin + lider_comunitaria)
 PATCH  /api/users/:id/role         <- cambiar rol (admin)
 DELETE /api/users/:id              <- eliminar usuario (admin)
 
 GET    /api/categories             <- categorias del espacio activo
-POST   /api/categories             <- crear categoria (admin)
-PUT    /api/categories/:id         <- editar categoria (admin)
-DELETE /api/categories/:id         <- eliminar categoria (admin)
+POST   /api/categories             <- crear categoria (admin + lider_comunitaria)
+PUT    /api/categories/:id         <- editar categoria (admin + lider_comunitaria)
+DELETE /api/categories/:id         <- eliminar categoria (admin + lider_comunitaria)
 
 GET    /api/resources              <- recursos del espacio activo
-POST   /api/resources              <- crear recurso (admin)
-PUT    /api/resources/:id          <- editar recurso (admin)
-DELETE /api/resources/:id          <- eliminar recurso (admin)
+POST   /api/resources              <- crear recurso (todos los roles elevados)
+PUT    /api/resources/:id          <- editar recurso (todos los roles elevados)
+DELETE /api/resources/:id          <- eliminar recurso (todos los roles elevados)
 
 GET    /api/bookings               <- reservas del usuario autenticado
-GET    /api/bookings/all           <- todas las reservas (admin)
-POST   /api/bookings               <- crear reserva
-PATCH  /api/bookings/:id/status    <- aprobar/rechazar (admin)
-DELETE /api/bookings/:id           <- cancelar
+GET    /api/bookings/admin/all     <- todas las reservas (admin + lider_comunitaria)
+POST   /api/bookings               <- crear reserva (cualquier auth; targetUserId solo roles elevados)
+PATCH  /api/bookings/:id/approve   <- aprobar (admin + lider_comunitaria)
+PATCH  /api/bookings/:id/reject    <- rechazar (admin + lider_comunitaria)
+PATCH  /api/bookings/:id/cancel    <- cancelar
 
-GET    /api/certifications/my      <- certificaciones del usuario
-POST   /api/certifications/request <- solicitar certificacion
-GET    /api/certifications/requests <- solicitudes pendientes (admin)
-PATCH  /api/certifications/requests/:id <- gestionar solicitud (admin)
+GET    /api/certifications/mine      <- certificaciones del usuario
+GET    /api/certifications/my-requests <- solicitudes propias
+POST   /api/certifications/request  <- solicitar certificacion
+GET    /api/admin/certifications/requests <- solicitudes pendientes (admin + lider_tecnica)
+PATCH  /api/admin/certifications/schedule <- programar sesion (admin + lider_tecnica)
+PATCH  /api/admin/certifications/requests/:id/resolve <- resolver (admin + lider_tecnica)
+GET    /api/admin/certifications    <- todas las certs (admin + lider_tecnica)
+DELETE /api/admin/certifications/:id <- revocar (admin + lider_tecnica)
 
-GET/POST /api/trainings            <- sesiones de capacitacion
-DELETE   /api/trainings/:id
+GET      /api/trainings            <- sesiones de capacitacion (cualquier auth)
+POST     /api/admin/trainings      <- crear capacitacion (admin + lider_tecnica)
+DELETE   /api/admin/trainings/:id  <- eliminar capacitacion (admin + lider_tecnica)
 
 GET/POST /api/comments             <- comunidad
 DELETE   /api/comments/:id
@@ -309,12 +378,13 @@ GET      /api/health               <- health check con DB
 
 - **Certificacion por categoria**, no por maquina individual
 - Usuario sin cert en la categoria → reserva PENDING (requiere aprobacion admin)
-- Admin o recursos con `requiresCertification=false` → reserva CONFIRMED directa
+- Roles elevados o recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Deteccion de conflictos:** `startA < endB AND endA > startB` → 409
-- Slots de 1 hora, horario configurable via BusinessHours (default 09:00-17:00, por espacio)
+- Horario flexible hasta 4 horas por reserva; configurable via BusinessHours (default 09:00-17:00, por espacio)
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
 - Maximo 10 usuarias por sesion de certificacion
-- Admin puede agendar a nombre de otra usuaria (`targetUserId` en el body)
+- Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
+- `ESPACIO_REUNION` (slug): auto-selecciona el recurso, oculta selector de maquina y pregunta de acompanante
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
 - No usar mapas estaticos de colores/labels en frontend — usar `r.category?.color` y `r.category?.name`
 
@@ -381,13 +451,28 @@ GET      /api/health               <- health check con DB
 - Acciones registradas en operaciones criticas de admin y superadmin (incluye SPACE_*)
 
 ### Feature: Calendario mejorado
-- `CalendarView.tsx` usa `dateClick` (no `select`) para click en cualquier celda
-- Reservas agrupadas por slot (clave: ISO string `.slice(0,13)`) → 1 evento FullCalendar por hora
-- Click en celda con reservas → `slotModal` muestra lista de reservas del slot
-- Click en celda vacía → abre BookingModal (o actionChoice si admin)
-- `hoursLoaded` state en CalendarPage: CalendarView no monta hasta que businessHours se cargue (evita flash de colores incorrectos)
-- `isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'` (SUPER_ADMIN incluido)
+- `CalendarView.tsx` usa `dateClick` y `eventClick`; un evento FullCalendar por reserva real (no agrupado)
+- `slotDuration: "00:30:00"` — franjas de 30 min
+- Click en celda con reservas → `slotModal` muestra lista con opcion de ver detalle o agregar nueva reserva
+- Detalle de reserva → boton "← Volver" restaura el slotModal (`returnSlot` en estado de detalle)
+- Click en celda vacía → abre BookingModal (o actionChoice si rol elevado)
+- `hoursLoaded` state en CalendarPage: CalendarView no monta hasta que businessHours se cargue
+- `isAdmin = ['ADMIN','SUPER_ADMIN','LIDER_TECNICA','LIDER_COMUNITARIA'].includes(role)` en CalendarPage
+- Tiempo flexible de reserva: inputs `startTime`/`endTime` tipo `time`, maximo 4 horas
+- Validacion en backend: `endTime > startTime`, duracion <= 4h
 - CSS inyectado via `<style>` para mostrar `+` en hover de celdas vacías
+
+### Feature: Roles granulares (LIDER_TECNICA / LIDER_COMUNITARIA)
+- Dos nuevos roles con permisos diferenciados (ver matriz en seccion Arquitectura multi-espacio)
+- `requireAnyOf(...roles)` factory en `role.middleware.ts`; middlewares especificos: `requireTecnica`, `requireComunitaria`, `requireElevated`
+- Navbar muestra items de menu Admin filtrados segun el rol del usuario logueado
+- UsersPage: badge de color por rol (indigo=SUPER_ADMIN, purple=ADMIN, blue=LIDER_TECNICA, teal=LIDER_COMUNITARIA), selector de rol en formulario incluye nuevos roles, boton de toggle rapido de rol eliminado
+- Migracion: `20260311193438_add_lider_roles`
+
+### Feature: Tablas admin responsivas (scroll horizontal en movil)
+- Todas las tablas admin usan `overflow-x-auto` + `min-w-full` (no `w-full`)
+- `min-w-full` permite que la tabla exceda el ancho del contenedor → activa el scroll horizontal
+- CategoriesPage: se agrego el wrapper `overflow-x-auto` que faltaba
 
 ### Feature: Tablas admin ordenables y filtrables
 - `SortableHeader` component en `client/src/components/shared/SortableHeader.tsx`
@@ -426,3 +511,6 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **GET /api/settings/business-hours requiere `authenticate`:** sin el middleware `req.user` es undefined → `resolveSpaceId` devuelve null → 400. Siempre agregar `authenticate` a rutas de settings aunque sean solo lectura.
 - **GET /api/spaces es publico:** la pagina de registro (no autenticada) necesita cargar la lista de espacios. Si se requiere auth en esa ruta, el interceptor 401 de axios redirige al login impidiendo el registro.
 - **SortableHeader:** importar desde `../../components/shared/SortableHeader` — exporta `SortState`, `toggleSort`, `compareVals` y el componente default. Usar `compareVals` con `localeCompare` con opciones `{ sensitivity: 'base', numeric: true }` — funciona para strings, ISO dates y numeros.
+- **Render + devDependencies:** Render setea `NODE_ENV=production`, lo que hace que `npm install` salte devDeps. Fix: `client/.npmrc` y `server/.npmrc` con `production=false`, mas la var de entorno `NPM_CONFIG_PRODUCTION=false` en Render.
+- **Seed con dotenv override:** `server/prisma/seed.ts` carga dotenv con `override: true` apuntando a `server/.env`. Si `DATABASE_URL` existe como var de entorno del sistema (ej. apuntando a localhost), se sobreescribe con el valor del `.env`. El script ya no usa `-r dotenv/config`.
+- **Neon connection string:** requiere `?sslmode=require` (y opcionalmente `&channel_binding=require`). Sin esto Prisma no conecta en produccion.

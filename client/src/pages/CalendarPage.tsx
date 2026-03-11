@@ -27,7 +27,7 @@ export default function CalendarPage() {
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
   const [hoursLoaded, setHoursLoaded] = useState(false);
 
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
 
   const fetchTrainings = async () => {
     try {
@@ -209,7 +209,7 @@ export default function CalendarPage() {
               Horario:{' '}
               <span className="font-medium text-gray-700">
                 {actionChoice.date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
-                {String(actionChoice.date.getHours()).padStart(2, '0')}:00
+                {String(actionChoice.date.getHours()).padStart(2, '0')}:{String(actionChoice.date.getMinutes()).padStart(2, '0')}
               </span>
             </p>
             <div className="space-y-2">

@@ -12,7 +12,6 @@ import toast from 'react-hot-toast';
 
 type PendingAction =
   | { kind: 'delete'; id: string; name: string }
-  | { kind: 'role'; id: string; currentRole: Role }
   | { kind: 'verify'; id: string; name: string };
 
 export default function UsersPage() {
@@ -68,10 +67,6 @@ export default function UsersPage() {
       } else if (pending.kind === 'verify') {
         await userService.verify(pending.id);
         toast.success('Usuario verificado');
-      } else {
-        const newRole: Role = (pending.currentRole as string) === 'ADMIN' ? 'USER' : 'ADMIN';
-        await userService.changeRole(pending.id, newRole as Role);
-        toast.success('Rol actualizado');
       }
       load();
     } catch (err) {
@@ -117,7 +112,7 @@ export default function UsersPage() {
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <SortableHeader label="Usuario" sortKey="name" sort={sort} onSort={handleSort} className="text-left" />
@@ -155,9 +150,15 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-center">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       u.role === 'SUPER_ADMIN' ? 'bg-indigo-100 text-indigo-700' :
-                      u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
+                      u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
+                      u.role === 'LIDER_TECNICA' ? 'bg-blue-100 text-blue-700' :
+                      u.role === 'LIDER_COMUNITARIA' ? 'bg-teal-100 text-teal-700' :
+                      'bg-gray-100 text-gray-600'
                     }`}>
-                      {u.role === 'SUPER_ADMIN' ? 'Super Admin' : u.role}
+                      {u.role === 'SUPER_ADMIN' ? 'Super Admin' :
+                       u.role === 'ADMIN' ? 'Admin' :
+                       u.role === 'LIDER_TECNICA' ? 'Líder Técnica' :
+                       u.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -176,12 +177,6 @@ export default function UsersPage() {
                           className="text-xs text-gray-600 hover:text-gray-900 font-medium"
                         >
                           Editar
-                        </button>
-                        <button
-                          onClick={() => setPending({ kind: 'role', id: u.id, currentRole: u.role })}
-                          className="text-xs text-brand-600 hover:text-brand-800 font-medium"
-                        >
-                          {u.role === 'ADMIN' ? '→ USER' : '→ ADMIN'}
                         </button>
                         <button
                           onClick={() => setPending({ kind: 'delete', id: u.id, name: u.name })}
@@ -211,6 +206,7 @@ export default function UsersPage() {
         <EditUserModal
           user={editTarget}
           isSuperAdmin={me?.role === 'SUPER_ADMIN'}
+          canChangeRole={me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN'}
           onClose={() => { setEditTarget(null); load(); }}
         />
       )}
@@ -237,25 +233,16 @@ export default function UsersPage() {
         />
       )}
 
-      {pending?.kind === 'role' && (
-        <ConfirmModal
-          title="Cambiar rol"
-          message={`¿Cambiar el rol a ${pending.currentRole === 'ADMIN' ? 'USER' : 'ADMIN'}?`}
-          confirmLabel="Cambiar"
-          variant="warning"
-          onConfirm={handleConfirm}
-          onCancel={() => setPending(null)}
-        />
-      )}
     </div>
   );
 }
 
-function EditUserModal({ user, isSuperAdmin, onClose }: { user: User; isSuperAdmin: boolean; onClose: () => void }) {
+function EditUserModal({ user, isSuperAdmin, canChangeRole, onClose }: { user: User; isSuperAdmin: boolean; canChangeRole: boolean; onClose: () => void }) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [organization, setOrganization] = useState(user.organization ?? '');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<Role>(user.role);
   const [spaceId, setSpaceId] = useState(user.spaceId ?? '');
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(false);
@@ -277,6 +264,9 @@ function EditUserModal({ user, isSuperAdmin, onClose }: { user: User; isSuperAdm
         ...(password ? { password } : {}),
         ...(isSuperAdmin ? { spaceId } : {}),
       });
+      if (role !== user.role) {
+        await userService.changeRole(user.id, role);
+      }
       toast.success('Usuario actualizado');
       onClose();
     } catch (err: unknown) {
@@ -307,14 +297,28 @@ function EditUserModal({ user, isSuperAdmin, onClose }: { user: User; isSuperAdm
               placeholder="Ej: Taller Comunal Las Flores"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nueva contraseña <span className="text-gray-400 font-normal">(dejar vacío para no cambiar)</span>
-            </label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6}
-              placeholder="Mínimo 6 caracteres"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-          </div>
+          {canChangeRole && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nueva contraseña <span className="text-gray-400 font-normal">(dejar vacío para no cambiar)</span>
+              </label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={6}
+                placeholder="Mínimo 6 caracteres"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          )}
+          {canChangeRole && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
+                <option value="USER">Usuario</option>
+                <option value="LIDER_TECNICA">Líder Técnica</option>
+                <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
+                <option value="ADMIN">Administrador</option>
+              </select>
+            </div>
+          )}
           {isSuperAdmin && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Espacio</label>
@@ -408,6 +412,8 @@ function CreateUserModal({ onClose, isSuperAdmin }: { onClose: () => void; isSup
             <select value={role} onChange={(e) => setRole(e.target.value as Role)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
               <option value="USER">Usuario</option>
+              <option value="LIDER_TECNICA">Líder Técnica</option>
+              <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
               <option value="ADMIN">Administrador</option>
             </select>
           </div>

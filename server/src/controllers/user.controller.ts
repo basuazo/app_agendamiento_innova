@@ -224,8 +224,8 @@ export const verifyUser = async (req: AuthRequest, res: Response): Promise<void>
 export const changeUserRole = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { role } = req.body;
-    if (!['ADMIN', 'USER'].includes(role)) {
-      res.status(400).json({ error: 'Rol inválido. Use ADMIN o USER' });
+    if (!['ADMIN', 'USER', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(role)) {
+      res.status(400).json({ error: 'Rol inválido.' });
       return;
     }
 

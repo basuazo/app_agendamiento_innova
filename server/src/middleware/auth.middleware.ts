@@ -6,8 +6,8 @@ export interface AuthRequest extends Request {
 }
 
 /** Devuelve el spaceId que aplica para la petición actual.
- *  - SUPER_ADMIN: lee el header X-Space-Id (puede ser null si no se especifica)
- *  - ADMIN/USER:  devuelve su propio spaceId */
+ *  - SUPER_ADMIN:        lee el header X-Space-Id (puede ser null si no se especifica)
+ *  - Todos los demás:   devuelve su propio spaceId */
 export function resolveSpaceId(req: AuthRequest): string | null {
   if (req.user?.role === 'SUPER_ADMIN') {
     return (req.headers['x-space-id'] as string) || null;

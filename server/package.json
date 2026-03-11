@@ -6,7 +6,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
-    "seed": "ts-node --project tsconfig.seed.json -r dotenv/config prisma/seed.ts",
+    "seed": "ts-node --project tsconfig.seed.json prisma/seed.ts",
     "db:migrate:prod": "npx prisma migrate deploy --schema=../prisma/schema.prisma",
     "studio": "npx prisma studio --schema=../prisma/schema.prisma"
   },

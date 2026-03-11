@@ -1,4 +1,7 @@
-// dotenv se carga antes via: ts-node -r dotenv/config (lee server/.env automáticamente)
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+
 import { PrismaClient, Role, BookingPurpose, BookingStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 

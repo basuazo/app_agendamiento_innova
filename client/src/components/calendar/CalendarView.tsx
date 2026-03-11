@@ -18,7 +18,7 @@ interface Props {
 }
 
 type DetailModal =
-  | { kind: 'booking'; booking: Booking }
+  | { kind: 'booking'; booking: Booking; returnSlot?: { date: Date; bookings: Booking[] } }
   | { kind: 'certSession'; requests: CertificationRequest[] }
   | null;
 
@@ -51,34 +51,20 @@ export default function CalendarView({
   const [slotModal, setSlotModal] = useState<SlotModal>(null);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
 
-  // Agrupa reservas por franja horaria (hora de inicio, precisión de hora)
-  const bookingsBySlot = useMemo(() => {
-    const map = new Map<string, Booking[]>();
-    for (const b of bookings) {
-      const key = new Date(b.startTime).toISOString().slice(0, 13);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(b);
-    }
-    return map;
-  }, [bookings]);
-
-  // Un evento por franja (en vez de uno por reserva)
+  // Un evento FullCalendar por reserva (con su duración real)
   const bookingSlotEvents = useMemo(() =>
-    Array.from(bookingsBySlot.entries()).map(([key, bks]) => {
-      const hasMultiple = bks.length > 1;
-      const color = hasMultiple
-        ? '#64748b'
-        : (bks[0].resource.category?.color ?? '#6b7280');
+    bookings.map((b) => {
+      const color = b.resource.category?.color ?? '#6b7280';
       return {
-        id: `slot-${key}`,
-        start: bks[0].startTime,
-        end: bks[0].endTime,
+        id: `booking-${b.id}`,
+        start: b.startTime,
+        end: b.endTime,
         backgroundColor: color,
         borderColor: color,
-        extendedProps: { slotBookings: bks, isSlotGroup: true },
+        extendedProps: { booking: b, isBooking: true },
       };
     }),
-  [bookingsBySlot]);
+  [bookings]);
 
   const trainingBgEvents = trainings.map((t) => ({
     id: `training-bg-${t.id}`,
@@ -142,8 +128,12 @@ export default function CalendarView({
       setShowClosedPopup(true);
       return;
     }
-    const key = date.toISOString().slice(0, 13);
-    const slotBks = bookingsBySlot.get(key) ?? [];
+    const clickedMs = date.getTime();
+    const slotBks = bookings.filter((b) => {
+      const start = new Date(b.startTime).getTime();
+      const end = new Date(b.endTime).getTime();
+      return clickedMs >= start && clickedMs < end;
+    });
     if (slotBks.length > 0) {
       setSlotModal({ date, bookings: slotBks });
     } else {
@@ -190,7 +180,7 @@ export default function CalendarView({
           events={events}
           slotMinTime="08:00:00"
           slotMaxTime="18:00:00"
-          slotDuration="01:00:00"
+          slotDuration="00:30:00"
           slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
           allDaySlot={false}
           weekends={true}
@@ -221,24 +211,15 @@ export default function CalendarView({
                 </div>
               );
             }
-            // Slot con reservas agrupadas
-            const bks = eventInfo.event.extendedProps.slotBookings as Booking[];
+            // Reserva individual
+            const b = eventInfo.event.extendedProps.booking as Booking;
             return (
               <div className="p-1 overflow-hidden h-full flex flex-col justify-between">
                 <div>
-                  {bks.length === 1 ? (
-                    <>
-                      <p className="font-semibold text-xs truncate">{bks[0].resource.name}</p>
-                      <p className="text-xs opacity-90 truncate">{bks[0].user.name}</p>
-                      <p className="text-xs opacity-75">{PURPOSE_LABELS[bks[0].purpose]}</p>
-                    </>
-                  ) : (
-                    <p className="font-semibold text-xs">
-                      {bks.length} reservas activas
-                    </p>
-                  )}
+                  <p className="font-semibold text-xs truncate">{b.resource.name}</p>
+                  <p className="text-xs opacity-90 truncate">{b.user.name}</p>
+                  <p className="text-xs opacity-75">{PURPOSE_LABELS[b.purpose]}</p>
                 </div>
-                <p className="text-xs opacity-60 text-right leading-none">Ver →</p>
               </div>
             );
           }}
@@ -253,14 +234,15 @@ export default function CalendarView({
               }
               return;
             }
-            if (info.event.extendedProps.isSlotGroup) {
-              const bks = info.event.extendedProps.slotBookings as Booking[];
-              const date = new Date(info.event.start!);
-              if (businessHours.length > 0 && !isWithinBusinessHours(date, businessHours)) {
-                setSlotModal({ date, bookings: bks });
-              } else {
-                setSlotModal({ date, bookings: bks });
-              }
+            if (info.event.extendedProps.isBooking) {
+              // Abrir slotModal con todas las reservas que se solapan en ese horario
+              const clickedMs = new Date(info.event.start!).getTime();
+              const slotBks = bookings.filter((b) => {
+                const start = new Date(b.startTime).getTime();
+                const end = new Date(b.endTime).getTime();
+                return clickedMs >= start && clickedMs < end;
+              });
+              setSlotModal({ date: info.event.start!, bookings: slotBks.length > 0 ? slotBks : [info.event.extendedProps.booking as Booking] });
             }
           }}
           nowIndicator
@@ -316,11 +298,10 @@ export default function CalendarView({
                   {slotModal.date.toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' })}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {String(slotModal.date.getHours()).padStart(2, '0')}:00 —{' '}
-                  {String(slotModal.date.getHours() + 1).padStart(2, '0')}:00
+                  {String(slotModal.date.getHours()).padStart(2, '0')}:{String(slotModal.date.getMinutes()).padStart(2, '0')}
                 </p>
               </div>
-              <button onClick={() => setSlotModal(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setSlotModal(null)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -337,7 +318,7 @@ export default function CalendarView({
                     <li key={b.id}>
                       <button
                         onClick={() => {
-                          setDetail({ kind: 'booking', booking: b });
+                          setDetail({ kind: 'booking', booking: b, returnSlot: { date: slotModal.date, bookings: slotModal.bookings } });
                           setSlotModal(null);
                         }}
                         className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-2.5 text-sm transition-colors"
@@ -351,7 +332,15 @@ export default function CalendarView({
                           <span className="text-gray-300">·</span>
                           <span className="text-gray-600 truncate">{b.user.name}</span>
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5 ml-4">{PURPOSE_LABELS[b.purpose]}</p>
+                        <div className="flex items-center gap-2 mt-0.5 ml-4">
+                          <p className="text-xs text-gray-400">{PURPOSE_LABELS[b.purpose]}</p>
+                          <span className="text-gray-300">·</span>
+                          <p className="text-xs text-gray-400">
+                            {new Date(b.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            {' – '}
+                            {new Date(b.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                          </p>
+                        </div>
                       </button>
                     </li>
                   ))}
@@ -387,7 +376,7 @@ export default function CalendarView({
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Detalle de reserva</h3>
-                <button onClick={() => setDetail(null)} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => setDetail(null)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -396,13 +385,33 @@ export default function CalendarView({
               <div className="space-y-2 text-sm">
                 <p><span className="font-medium text-gray-700">Recurso:</span> <span className="text-gray-900">{b.resource.name}</span></p>
                 <p><span className="font-medium text-gray-700">Usuaria:</span> <span className="text-gray-900">{b.user.name}</span></p>
+                <p>
+                  <span className="font-medium text-gray-700">Horario:</span>{' '}
+                  <span className="text-gray-900">
+                    {new Date(b.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    {' – '}
+                    {new Date(b.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                  </span>
+                </p>
                 <p><span className="font-medium text-gray-700">Propósito:</span> <span className="text-gray-900">{purposeText}</span></p>
                 {b.notes && <p><span className="font-medium text-gray-700">Notas:</span> <span className="text-gray-900">{b.notes}</span></p>}
               </div>
-              <button onClick={() => setDetail(null)}
-                className="mt-5 w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 rounded-lg transition-colors">
-                Cerrar
-              </button>
+              <div className="flex gap-2 mt-5">
+                {detail.kind === 'booking' && detail.returnSlot && (
+                  <button
+                    onClick={() => { setSlotModal(detail.returnSlot!); setDetail(null); }}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 rounded-lg transition-colors"
+                  >
+                    ← Volver
+                  </button>
+                )}
+                <button
+                  onClick={() => setDetail(null)}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 rounded-lg transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -415,7 +424,7 @@ export default function CalendarView({
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Sesión de Certificación</h3>
-              <button onClick={() => setDetail(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setDetail(null)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>

@@ -17,8 +17,6 @@ interface Props {
   preselectedResource?: Resource;
 }
 
-const HOURS = Array.from({ length: 8 }, (_, i) => i + 9);
-
 export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource }: Props) {
   const { create } = useBookingStore();
   const { resources, fetchAll } = useResourceStore();
@@ -40,7 +38,8 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
   const [date, setDate] = useState(
     preselectedDate ? format(preselectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')
   );
-  const [hour, setHour] = useState(9);
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
   const [purpose, setPurpose] = useState<'LEARN' | 'PRODUCE' | 'DESIGN'>('LEARN');
   const [isPrivate, setIsPrivate] = useState(false);
   const [produceItem, setProduceItem] = useState('');
@@ -69,7 +68,9 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     if (preselectedDate) {
       setDate(format(preselectedDate, 'yyyy-MM-dd'));
       const h = preselectedDate.getHours();
-      setHour(h >= 9 && h <= 16 ? h : 9);
+      const clampedH = h >= 9 && h <= 16 ? h : 9;
+      setStartTime(`${String(clampedH).padStart(2, '0')}:00`);
+      setEndTime(`${String(Math.min(clampedH + 1, 17)).padStart(2, '0')}:00`);
     }
   }, [preselectedDate]);
 
@@ -82,11 +83,12 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
   }, [preselectedResource, isAdmin]);
 
   const fetchAvailability = useCallback(async () => {
-    if (!date) return;
+    if (!date || !startTime || !endTime) return;
     setCheckingAvailability(true);
     try {
-      const startIso = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`).toISOString();
-      const endIso = new Date(new Date(startIso).getTime() + 60 * 60 * 1000).toISOString();
+      const startIso = new Date(`${date}T${startTime}:00`).toISOString();
+      const endIso = new Date(`${date}T${endTime}:00`).toISOString();
+      if (new Date(endIso) <= new Date(startIso)) { setAvailability(null); return; }
       const data = await bookingService.getAvailability(startIso, endIso);
       setAvailability(data);
       if (resourceId && data[resourceId] && data[resourceId].status !== 'available') {
@@ -97,11 +99,11 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     } finally {
       setCheckingAvailability(false);
     }
-  }, [date, hour, resourceId]);
+  }, [date, startTime, endTime, resourceId]);
 
   useEffect(() => {
     if (isOpen && step === 2 && date) fetchAvailability();
-  }, [isOpen, step, date, hour]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, step, date, startTime, endTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
@@ -110,7 +112,8 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     setSelectedCategory(null);
     setResourceId('');
     setDate(format(new Date(), 'yyyy-MM-dd'));
-    setHour(9);
+    setStartTime('09:00');
+    setEndTime('10:00');
     setPurpose('LEARN');
     setProduceItem('');
     setProduceQty(1);
@@ -138,33 +141,57 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
 
   const handleCategorySelect = (cat: Category) => {
     setSelectedCategory(cat);
-    setResourceId('');
     setQuantity(1);
     setIsPrivate(false);
     setWithCompanions(false);
     setCompanionCount(1);
     setCompanionRelation('AMISTAD');
+    // Para Espacio de Reuniones, auto-seleccionar el único recurso
+    if (cat.slug === 'ESPACIO_REUNION') {
+      const reunionResource = resources.find((r) => r.isActive && r.categoryId === cat.id);
+      setResourceId(reunionResource?.id ?? '');
+    } else {
+      setResourceId('');
+    }
     setStep(2);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resourceId) { toast.error('Selecciona una máquina'); return; }
+    if (!resourceId) {
+      toast.error(selectedCategory?.slug === 'ESPACIO_REUNION'
+        ? 'El espacio de reuniones no está disponible en este horario'
+        : 'Selecciona una máquina');
+      return;
+    }
 
-    const startTime = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`);
+    const startDate = new Date(`${date}T${startTime}:00`);
+    const endDate = new Date(`${date}T${endTime}:00`);
+
+    if (endDate <= startDate) {
+      toast.error('La hora de término debe ser después de la hora de inicio');
+      return;
+    }
+    const durationMs = endDate.getTime() - startDate.getTime();
+    if (durationMs > 4 * 60 * 60 * 1000) {
+      toast.error('La reserva no puede durar más de 4 horas');
+      return;
+    }
+
     setLoading(true);
     try {
       await create({
         resourceId,
-        startTime: startTime.toISOString(),
+        startTime: startDate.toISOString(),
+        endTime: endDate.toISOString(),
         purpose: selectedCategory?.slug === 'ESPACIO_REUNION' ? 'REUNION' : purpose,
         produceItem: purpose === 'PRODUCE' ? produceItem : undefined,
         produceQty: purpose === 'PRODUCE' ? produceQty : undefined,
         quantity: selectedCategory?.slug === 'MESON_CORTE' ? quantity : 1,
         notes: notes || undefined,
         isPrivate: selectedCategory?.slug === 'ESPACIO_REUNION' ? isPrivate : undefined,
-        attendees: withCompanions ? 1 + companionCount : 1,
-        companionRelation: withCompanions ? companionRelation : undefined,
+        attendees: selectedCategory?.slug !== 'ESPACIO_REUNION' && withCompanions ? 1 + companionCount : undefined,
+        companionRelation: selectedCategory?.slug !== 'ESPACIO_REUNION' && withCompanions ? companionRelation : undefined,
         targetUserId: isAdmin && !bookingForSelf && targetUserId ? targetUserId : undefined,
       });
       const selectedResource = categoryResources.find((r) => r.id === resourceId);
@@ -232,7 +259,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
               <h2 className="text-xl font-bold text-gray-900">Nueva Reserva</h2>
               <p className="text-sm text-gray-500 mt-0.5">¿Para quién agenda?</p>
             </div>
-            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <button onClick={handleClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -340,7 +367,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                   </p>
                 )}
               </div>
-              <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <button onClick={handleClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -396,12 +423,6 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <button
-                onClick={() => setStep(1)}
-                className="text-xs text-brand-600 hover:underline mb-1 flex items-center gap-1"
-              >
-                ← Cambiar categoría
-              </button>
               {isAdmin && !bookingForSelf && targetUserId && (
                 <p className="text-xs text-brand-700 font-medium mb-1">
                   Agendando para: {adminUsers.find((u) => u.id === targetUserId)?.name}
@@ -418,7 +439,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                 </p>
               )}
             </div>
-            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <button onClick={handleClose} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -447,47 +468,76 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
               />
             </div>
 
-            {/* Hora */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hora de inicio *</label>
-              <select
-                value={hour}
-                onChange={(e) => setHour(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                {HOURS.map((h) => (
-                  <option key={h} value={h}>
-                    {String(h).padStart(2, '0')}:00 — {String(h + 1).padStart(2, '0')}:00
-                  </option>
-                ))}
-              </select>
+            {/* Hora inicio / término */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hora de inicio *</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hora de término *</label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
             </div>
+            {(() => {
+              if (!startTime || !endTime) return null;
+              const s = new Date(`2000-01-01T${startTime}:00`);
+              const e = new Date(`2000-01-01T${endTime}:00`);
+              const diffMs = e.getTime() - s.getTime();
+              if (diffMs <= 0) return (
+                <p className="text-xs text-red-500 -mt-3">La hora de término debe ser después del inicio</p>
+              );
+              if (diffMs > 4 * 60 * 60 * 1000) return (
+                <p className="text-xs text-red-500 -mt-3">Máximo 4 horas por reserva</p>
+              );
+              const hrs = Math.floor(diffMs / 3600000);
+              const mins = Math.floor((diffMs % 3600000) / 60000);
+              return (
+                <p className="text-xs text-gray-400 -mt-3">
+                  Duración: {hrs > 0 ? `${hrs}h ` : ''}{mins > 0 ? `${mins}min` : ''}
+                </p>
+              );
+            })()}
 
-            {/* Máquina */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Máquina *
-                {checkingAvailability && (
-                  <span className="ml-2 text-xs text-gray-400 font-normal">Verificando disponibilidad...</span>
+            {/* Máquina — oculto para Espacio de Reuniones (se auto-selecciona) */}
+            {selectedCategory?.slug !== 'ESPACIO_REUNION' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Máquina *
+                  {checkingAvailability && (
+                    <span className="ml-2 text-xs text-gray-400 font-normal">Verificando disponibilidad...</span>
+                  )}
+                </label>
+                <select
+                  value={resourceId}
+                  onChange={(e) => setResourceId(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">Seleccionar máquina...</option>
+                  {categoryResources.map((r) => (
+                    <option key={r.id} value={r.id} disabled={isResourceDisabled(r)}>
+                      {getResourceLabel(r)}
+                    </option>
+                  ))}
+                </select>
+                {categoryResources.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1">No hay máquinas disponibles en esta categoría</p>
                 )}
-              </label>
-              <select
-                value={resourceId}
-                onChange={(e) => setResourceId(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                <option value="">Seleccionar máquina...</option>
-                {categoryResources.map((r) => (
-                  <option key={r.id} value={r.id} disabled={isResourceDisabled(r)}>
-                    {getResourceLabel(r)}
-                  </option>
-                ))}
-              </select>
-              {categoryResources.length === 0 && (
-                <p className="text-xs text-gray-400 mt-1">No hay máquinas disponibles en esta categoría</p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Cantidad de mesones (solo para MESON_CORTE) */}
             {selectedCategory?.slug === 'MESON_CORTE' && resourceId && (() => {
@@ -616,80 +666,82 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
               </div>
             )}
 
-            {/* Acompañantes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">¿Vendrás acompañado/a? *</label>
-              <div className="flex gap-2 mb-3">
-                <button
-                  type="button"
-                  onClick={() => setWithCompanions(false)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
-                    !withCompanions
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
-                  }`}
-                >
-                  No, solo yo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWithCompanions(true)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
-                    withCompanions
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
-                  }`}
-                >
-                  Sí, con acompañantes
-                </button>
-              </div>
-              {withCompanions && (
-                <div className="bg-gray-50 rounded-lg p-3 space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ¿Cuántos acompañantes? *
-                    </label>
-                    <input
-                      type="number"
-                      value={companionCount}
-                      onChange={(e) => setCompanionCount(Math.max(1, Number(e.target.value)))}
-                      min={1}
-                      max={11}
-                      required
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      Total en el espacio: {1 + companionCount} persona{1 + companionCount > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ¿Cuál es tu relación con ellos? *
-                    </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {([
-                        { value: 'CUIDADOS', label: 'Cuidados' },
-                        { value: 'AMISTAD', label: 'Amistad' },
-                        { value: 'OTRO', label: 'Otro' },
-                      ] as const).map(({ value, label }) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setCompanionRelation(value)}
-                          className={`py-2 px-2 rounded-lg text-xs font-medium border transition-all ${
-                            companionRelation === value
-                              ? 'bg-brand-600 text-white border-brand-600'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+            {/* Acompañantes — no aplica para Sala de Reuniones */}
+            {selectedCategory?.slug !== 'ESPACIO_REUNION' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">¿Vendrás acompañado/a? *</label>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setWithCompanions(false)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
+                      !withCompanions
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
+                    }`}
+                  >
+                    No, solo yo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWithCompanions(true)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
+                      withCompanions
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
+                    }`}
+                  >
+                    Sí, con acompañantes
+                  </button>
+                </div>
+                {withCompanions && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        ¿Cuántos acompañantes? *
+                      </label>
+                      <input
+                        type="number"
+                        value={companionCount}
+                        onChange={(e) => setCompanionCount(Math.max(1, Number(e.target.value)))}
+                        min={1}
+                        max={11}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Total en el espacio: {1 + companionCount} persona{1 + companionCount > 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        ¿Cuál es tu relación con ellos? *
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {([
+                          { value: 'CUIDADOS', label: 'Cuidados' },
+                          { value: 'AMISTAD', label: 'Amistad' },
+                          { value: 'OTRO', label: 'Otro' },
+                        ] as const).map(({ value, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setCompanionRelation(value)}
+                            className={`py-2 px-2 rounded-lg text-xs font-medium border transition-all ${
+                              companionRelation === value
+                                ? 'bg-brand-600 text-white border-brand-600'
+                                : 'bg-white text-gray-700 border-gray-300 hover:border-brand-400'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Notas */}
             <div>
@@ -706,10 +758,10 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={handleClose}
+                onClick={() => setStep(preselectedResource ? (isAdmin ? 0 : 1) : 1)}
                 className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
               >
-                Cancelar
+                ← Volver
               </button>
               <button
                 type="submit"

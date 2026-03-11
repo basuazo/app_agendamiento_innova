@@ -210,7 +210,7 @@ export default function CertificationsPage() {
                 <>
                   <div className="bg-white rounded-xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
                     <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                           <th className="px-4 py-3 text-left">
@@ -300,7 +300,7 @@ export default function CertificationsPage() {
               ) : (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
@@ -358,7 +358,7 @@ export default function CertificationsPage() {
               ) : (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />

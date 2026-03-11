@@ -15,7 +15,8 @@ export default function ProtectedRoute({ children, adminOnly = false, superAdmin
   if (isLoading) return <LoadingSpinner size="lg" />;
   if (!user) return <Navigate to="/login" replace />;
   if (superAdminOnly && user.role !== 'SUPER_ADMIN') return <Navigate to="/calendar" replace />;
-  if (adminOnly && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') return <Navigate to="/calendar" replace />;
+  const elevatedRoles = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'];
+  if (adminOnly && !elevatedRoles.includes(user.role)) return <Navigate to="/calendar" replace />;
 
   return <>{children}</>;
 }

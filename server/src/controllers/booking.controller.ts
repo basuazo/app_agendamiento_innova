@@ -159,27 +159,32 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
 
 export const createBooking = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { resourceId, startTime: startRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId } = req.body;
+    const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId } = req.body;
 
-    // Admin puede agendar en nombre de otra usuaria
-    const bookingUserId = (['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && targetUserId) ? targetUserId : req.user!.id;
+    // Admin / líderes pueden agendar en nombre de otra usuaria
+    const bookingUserId = (['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(req.user!.role) && targetUserId) ? targetUserId : req.user!.id;
 
-    if (!resourceId || !startRaw || !purpose) {
-      res.status(400).json({ error: 'resourceId, startTime y purpose son requeridos' });
+    if (!resourceId || !startRaw || !endRaw || !purpose) {
+      res.status(400).json({ error: 'resourceId, startTime, endTime y purpose son requeridos' });
       return;
     }
 
     const startTime = new Date(startRaw);
-    const endTime = new Date(startTime.getTime() + 60 * 60 * 1000);
+    const endTime = new Date(endRaw);
 
-    if (startTime < new Date()) {
-      res.status(400).json({ error: 'No se pueden crear reservas en el pasado' });
+    if (endTime <= startTime) {
+      res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio' });
       return;
     }
 
-    const hour = startTime.getUTCHours();
-    if (hour < 9 || hour > 16) {
-      res.status(400).json({ error: 'El horario de reserva es de 09:00 a 17:00 (último slot a las 16:00)' });
+    const durationMs = endTime.getTime() - startTime.getTime();
+    if (durationMs > 4 * 60 * 60 * 1000) {
+      res.status(400).json({ error: 'La reserva no puede durar más de 4 horas' });
+      return;
+    }
+
+    if (startTime < new Date()) {
+      res.status(400).json({ error: 'No se pueden crear reservas en el pasado' });
       return;
     }
 
