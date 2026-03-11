@@ -1,18 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CertificationRequest, Certification } from '../../types';
 import { certificationService } from '../../services/certification.service';
-import { RESOURCE_CATEGORY_LABELS, formatDateTime } from '../../utils/dateHelpers';
+import { formatDateTime } from '../../utils/dateHelpers';
+import { useAuthStore } from '../../store/authStore';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
+import SortableHeader, { SortState, toggleSort, compareVals } from '../../components/shared/SortableHeader';
 import toast from 'react-hot-toast';
 
 type Tab = 'requests' | 'scheduled' | 'certified';
 
 export default function CertificationsPage() {
+  const { currentSpaceId } = useAuthStore();
   const [tab, setTab] = useState<Tab>('requests');
   const [pendingRequests, setPendingRequests] = useState<CertificationRequest[]>([]);
   const [scheduledRequests, setScheduledRequests] = useState<CertificationRequest[]>([]);
   const [certifications, setCertifications] = useState<Certification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortState | null>(null);
+  const handleSort = (key: string) => setSort(toggleSort(sort, key));
 
   // Scheduling state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -43,7 +50,7 @@ export default function CertificationsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -100,6 +107,63 @@ export default function CertificationsPage() {
 
   const today = new Date().toISOString().split('T')[0];
 
+  const displayPending = useMemo(() => {
+    const q = search.toLowerCase();
+    const list = q
+      ? pendingRequests.filter((r) =>
+          (r.user?.name ?? '').toLowerCase().includes(q) ||
+          (r.user?.email ?? '').toLowerCase().includes(q) ||
+          (r.category?.name ?? '').toLowerCase().includes(q)
+        )
+      : pendingRequests;
+    if (!sort) return list;
+    return [...list].sort((a, b) => {
+      const val = (x: typeof a) =>
+        sort.key === 'user' ? (x.user?.name ?? '') :
+        sort.key === 'category' ? (x.category?.name ?? '') :
+        sort.key === 'createdAt' ? x.createdAt : '';
+      return compareVals(val(a), val(b), sort.dir);
+    });
+  }, [pendingRequests, search, sort]);
+
+  const displayScheduled = useMemo(() => {
+    const q = search.toLowerCase();
+    const list = q
+      ? scheduledRequests.filter((r) =>
+          (r.user?.name ?? '').toLowerCase().includes(q) ||
+          (r.user?.email ?? '').toLowerCase().includes(q) ||
+          (r.category?.name ?? '').toLowerCase().includes(q)
+        )
+      : scheduledRequests;
+    if (!sort) return list;
+    return [...list].sort((a, b) => {
+      const val = (x: typeof a) =>
+        sort.key === 'user' ? (x.user?.name ?? '') :
+        sort.key === 'category' ? (x.category?.name ?? '') :
+        sort.key === 'scheduledDate' ? (x.scheduledDate ?? '') : '';
+      return compareVals(val(a), val(b), sort.dir);
+    });
+  }, [scheduledRequests, search, sort]);
+
+  const displayCertified = useMemo(() => {
+    const q = search.toLowerCase();
+    const list = q
+      ? certifications.filter((c) =>
+          (c.user?.name ?? '').toLowerCase().includes(q) ||
+          (c.user?.email ?? '').toLowerCase().includes(q) ||
+          (c.category?.name ?? '').toLowerCase().includes(q)
+        )
+      : certifications;
+    if (!sort) return list;
+    return [...list].sort((a, b) => {
+      const val = (x: typeof a) =>
+        sort.key === 'user' ? (x.user?.name ?? '') :
+        sort.key === 'category' ? (x.category?.name ?? '') :
+        sort.key === 'certifiedAt' ? x.certifiedAt : '';
+      return compareVals(val(a), val(b), sort.dir);
+    });
+  }, [certifications, search, sort]);
+
   const tabLabels: Record<Tab, string> = {
     requests: `Solicitudes${pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ''}`,
     scheduled: `Programadas${scheduledRequests.length > 0 ? ` (${scheduledRequests.length})` : ''}`,
@@ -110,18 +174,27 @@ export default function CertificationsPage() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Gestión de Certificaciones</h1>
 
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6">
-        {(['requests', 'scheduled', 'certified'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+          {(['requests', 'scheduled', 'certified'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setSort(null); }}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tabLabels[t]}
-          </button>
-        ))}
+              {tabLabels[t]}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por usuaria o categoría..."
+          className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
       </div>
 
       {isLoading ? (
@@ -155,13 +228,13 @@ export default function CertificationsPage() {
                               className="w-4 h-4"
                             />
                           </th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-600">Usuaria</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-600">Solicitada</th>
+                          <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
+                          <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
+                          <SortableHeader label="Solicitada" sortKey="createdAt" sort={sort} onSort={handleSort} className="text-left" />
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {pendingRequests.map((r) => (
+                        {displayPending.map((r) => (
                           <tr key={r.id} className={selectedIds.has(r.id) ? 'bg-brand-50' : ''}>
                             <td className="px-4 py-3">
                               <input
@@ -176,7 +249,7 @@ export default function CertificationsPage() {
                               <p className="text-xs text-gray-400">{r.user?.email}</p>
                             </td>
                             <td className="px-4 py-3 text-gray-700">
-                              {RESOURCE_CATEGORY_LABELS[r.resourceCategory]}
+                              {r.category?.name ?? '—'}
                             </td>
                             <td className="px-4 py-3 text-gray-500 text-xs">
                               {formatDateTime(r.createdAt)}
@@ -230,21 +303,21 @@ export default function CertificationsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Usuaria</th>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Fecha Sesión</th>
+                        <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
+                        <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
+                        <SortableHeader label="Fecha Sesión" sortKey="scheduledDate" sort={sort} onSort={handleSort} className="text-left" />
                         <th className="px-4 py-3 text-right font-medium text-gray-600">Resolución</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {scheduledRequests.map((r) => (
+                      {displayScheduled.map((r) => (
                         <tr key={r.id}>
                           <td className="px-4 py-3">
                             <p className="font-medium text-gray-900">{r.user?.name}</p>
                             <p className="text-xs text-gray-400">{r.user?.email}</p>
                           </td>
                           <td className="px-4 py-3 text-gray-700">
-                            {RESOURCE_CATEGORY_LABELS[r.resourceCategory]}
+                            {r.category?.name ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">
                             {r.scheduledDate ? formatDateTime(r.scheduledDate) : '—'}
@@ -288,21 +361,21 @@ export default function CertificationsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Usuaria</th>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
-                        <th className="px-4 py-3 text-left font-medium text-gray-600">Certificada</th>
+                        <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
+                        <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
+                        <SortableHeader label="Certificada" sortKey="certifiedAt" sort={sort} onSort={handleSort} className="text-left" />
                         <th className="px-4 py-3 text-right font-medium text-gray-600">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {certifications.map((c) => (
+                      {displayCertified.map((c) => (
                         <tr key={c.id}>
                           <td className="px-4 py-3">
                             <p className="font-medium text-gray-900">{c.user?.name ?? '—'}</p>
                             <p className="text-xs text-gray-400">{c.user?.email ?? ''}</p>
                           </td>
                           <td className="px-4 py-3 text-gray-700">
-                            {RESOURCE_CATEGORY_LABELS[c.resourceCategory]}
+                            {c.category?.name ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">
                             {formatDateTime(c.certifiedAt)}

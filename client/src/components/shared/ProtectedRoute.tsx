@@ -6,14 +6,16 @@ import LoadingSpinner from './LoadingSpinner';
 interface Props {
   children: ReactNode;
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
 }
 
-export default function ProtectedRoute({ children, adminOnly = false }: Props) {
+export default function ProtectedRoute({ children, adminOnly = false, superAdminOnly = false }: Props) {
   const { user, isLoading } = useAuthStore();
 
   if (isLoading) return <LoadingSpinner size="lg" />;
   if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && user.role !== 'ADMIN') return <Navigate to="/calendar" replace />;
+  if (superAdminOnly && user.role !== 'SUPER_ADMIN') return <Navigate to="/calendar" replace />;
+  if (adminOnly && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') return <Navigate to="/calendar" replace />;
 
   return <>{children}</>;
 }

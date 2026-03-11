@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import esLocale from '@fullcalendar/core/locales/es';
 import { Booking, Training, CertificationRequest, BusinessHours } from '../../types';
-import { RESOURCE_CATEGORY_COLORS, RESOURCE_CATEGORY_LABELS, PURPOSE_LABELS } from '../../utils/dateHelpers';
+import { PURPOSE_LABELS } from '../../utils/dateHelpers';
 
 interface Props {
   bookings: Booking[];
@@ -21,6 +21,8 @@ type DetailModal =
   | { kind: 'booking'; booking: Booking }
   | { kind: 'certSession'; requests: CertificationRequest[] }
   | null;
+
+type SlotModal = { date: Date; bookings: Booking[] } | null;
 
 function isWithinBusinessHours(date: Date, businessHours: BusinessHours[]): boolean {
   const dayOfWeek = date.getDay();
@@ -46,17 +48,37 @@ export default function CalendarView({
   onTrainingClick,
 }: Props) {
   const [detail, setDetail] = useState<DetailModal>(null);
+  const [slotModal, setSlotModal] = useState<SlotModal>(null);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
 
-  const bookingEvents = bookings.map((b) => ({
-    id: b.id,
-    title: `${b.resource.name} — ${b.user.name}`,
-    start: b.startTime,
-    end: b.endTime,
-    backgroundColor: RESOURCE_CATEGORY_COLORS[b.resource.category] ?? '#6b7280',
-    borderColor: RESOURCE_CATEGORY_COLORS[b.resource.category] ?? '#6b7280',
-    extendedProps: { booking: b, isTraining: false },
-  }));
+  // Agrupa reservas por franja horaria (hora de inicio, precisión de hora)
+  const bookingsBySlot = useMemo(() => {
+    const map = new Map<string, Booking[]>();
+    for (const b of bookings) {
+      const key = new Date(b.startTime).toISOString().slice(0, 13);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
+    }
+    return map;
+  }, [bookings]);
+
+  // Un evento por franja (en vez de uno por reserva)
+  const bookingSlotEvents = useMemo(() =>
+    Array.from(bookingsBySlot.entries()).map(([key, bks]) => {
+      const hasMultiple = bks.length > 1;
+      const color = hasMultiple
+        ? '#64748b'
+        : (bks[0].resource.category?.color ?? '#6b7280');
+      return {
+        id: `slot-${key}`,
+        start: bks[0].startTime,
+        end: bks[0].endTime,
+        backgroundColor: color,
+        borderColor: color,
+        extendedProps: { slotBookings: bks, isSlotGroup: true },
+      };
+    }),
+  [bookingsBySlot]);
 
   const trainingBgEvents = trainings.map((t) => ({
     id: `training-bg-${t.id}`,
@@ -99,7 +121,7 @@ export default function CalendarView({
     extendedProps: { isCertSession: true, requests: reqs },
   }));
 
-  const events = [...bookingEvents, ...trainingBgEvents, ...trainingLabelEvents, ...certSessionEvents];
+  const events = [...bookingSlotEvents, ...trainingBgEvents, ...trainingLabelEvents, ...certSessionEvents];
 
   // Convertir businessHours al formato de FullCalendar
   const fcBusinessHours = businessHours.length > 0
@@ -114,16 +136,43 @@ export default function CalendarView({
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
-  const handleSelect = (info: { start: Date }) => {
-    if (businessHours.length > 0 && !isWithinBusinessHours(info.start, businessHours)) {
+  const handleDateClick = (info: { date: Date }) => {
+    const date = info.date;
+    if (businessHours.length > 0 && !isWithinBusinessHours(date, businessHours)) {
       setShowClosedPopup(true);
       return;
     }
-    onSlotClick(info.start);
+    const key = date.toISOString().slice(0, 13);
+    const slotBks = bookingsBySlot.get(key) ?? [];
+    if (slotBks.length > 0) {
+      setSlotModal({ date, bookings: slotBks });
+    } else {
+      onSlotClick(date);
+    }
   };
 
   return (
     <>
+      {/* Indicador (+) en celdas vacías al hover */}
+      <style>{`
+        .fc-timegrid-slot-lane {
+          cursor: pointer;
+          position: relative;
+        }
+        .fc-timegrid-slot-lane:hover::after {
+          content: '+';
+          position: absolute;
+          right: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #d1d5db;
+          font-size: 16px;
+          font-weight: 700;
+          pointer-events: none;
+          line-height: 1;
+        }
+      `}</style>
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -139,8 +188,6 @@ export default function CalendarView({
             right: 'dayGridMonth,timeGridWeek,timeGridDay',
           }}
           events={events}
-          selectable
-          selectMirror
           slotMinTime="08:00:00"
           slotMaxTime="18:00:00"
           slotDuration="01:00:00"
@@ -148,7 +195,7 @@ export default function CalendarView({
           allDaySlot={false}
           weekends={true}
           height="auto"
-          select={handleSelect}
+          dateClick={handleDateClick}
           businessHours={fcBusinessHours}
           eventContent={(eventInfo) => {
             if (eventInfo.event.extendedProps.isCertSession) {
@@ -174,12 +221,24 @@ export default function CalendarView({
                 </div>
               );
             }
-            const b = eventInfo.event.extendedProps.booking as Booking;
+            // Slot con reservas agrupadas
+            const bks = eventInfo.event.extendedProps.slotBookings as Booking[];
             return (
-              <div className="p-1 overflow-hidden">
-                <p className="font-semibold text-xs truncate">{b.resource.name}</p>
-                <p className="text-xs opacity-90 truncate">{b.user.name}</p>
-                <p className="text-xs opacity-75">{PURPOSE_LABELS[b.purpose]}</p>
+              <div className="p-1 overflow-hidden h-full flex flex-col justify-between">
+                <div>
+                  {bks.length === 1 ? (
+                    <>
+                      <p className="font-semibold text-xs truncate">{bks[0].resource.name}</p>
+                      <p className="text-xs opacity-90 truncate">{bks[0].user.name}</p>
+                      <p className="text-xs opacity-75">{PURPOSE_LABELS[bks[0].purpose]}</p>
+                    </>
+                  ) : (
+                    <p className="font-semibold text-xs">
+                      {bks.length} reservas activas
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs opacity-60 text-right leading-none">Ver →</p>
               </div>
             );
           }}
@@ -194,7 +253,15 @@ export default function CalendarView({
               }
               return;
             }
-            setDetail({ kind: 'booking', booking: info.event.extendedProps.booking as Booking });
+            if (info.event.extendedProps.isSlotGroup) {
+              const bks = info.event.extendedProps.slotBookings as Booking[];
+              const date = new Date(info.event.start!);
+              if (businessHours.length > 0 && !isWithinBusinessHours(date, businessHours)) {
+                setSlotModal({ date, bookings: bks });
+              } else {
+                setSlotModal({ date, bookings: bks });
+              }
+            }
           }}
           nowIndicator
         />
@@ -228,6 +295,81 @@ export default function CalendarView({
               className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2.5 rounded-lg transition-colors"
             >
               Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: reservas de una franja + botón nueva reserva */}
+      {slotModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setSlotModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-gray-900 capitalize">
+                  {slotModal.date.toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' })}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {String(slotModal.date.getHours()).padStart(2, '0')}:00 —{' '}
+                  {String(slotModal.date.getHours() + 1).padStart(2, '0')}:00
+                </p>
+              </div>
+              <button onClick={() => setSlotModal(null)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {slotModal.bookings.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  Reservas en este horario
+                </p>
+                <ul className="space-y-1.5">
+                  {slotModal.bookings.map((b) => (
+                    <li key={b.id}>
+                      <button
+                        onClick={() => {
+                          setDetail({ kind: 'booking', booking: b });
+                          setSlotModal(null);
+                        }}
+                        className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-2.5 text-sm transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }}
+                          />
+                          <span className="font-medium text-gray-900">{b.resource.name}</span>
+                          <span className="text-gray-300">·</span>
+                          <span className="text-gray-600 truncate">{b.user.name}</span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5 ml-4">{PURPOSE_LABELS[b.purpose]}</p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                onSlotClick(slotModal.date);
+                setSlotModal(null);
+              }}
+              className="w-full py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Nueva Reserva en este horario
             </button>
           </div>
         </div>
@@ -285,7 +427,7 @@ export default function CalendarView({
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
                   <span>{r.user?.name ?? r.userId}</span>
                   <span className="text-gray-400">—</span>
-                  <span className="text-gray-500">{RESOURCE_CATEGORY_LABELS[r.resourceCategory]}</span>
+                  <span className="text-gray-500">{r.category?.name ?? r.categoryId}</span>
                 </li>
               ))}
             </ul>

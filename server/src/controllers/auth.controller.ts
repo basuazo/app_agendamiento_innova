@@ -5,15 +5,31 @@ import prisma from '../lib/prisma';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, spaceId, organization } = req.body;
 
     if (!name || !email || !password) {
       res.status(400).json({ error: 'Nombre, email y contraseña son requeridos' });
       return;
     }
 
+    if (!organization?.trim()) {
+      res.status(400).json({ error: 'La agrupación u organización es requerida' });
+      return;
+    }
+
+    if (!spaceId) {
+      res.status(400).json({ error: 'Debes seleccionar un espacio' });
+      return;
+    }
+
     if (password.length < 6) {
       res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+      return;
+    }
+
+    const space = await prisma.space.findUnique({ where: { id: spaceId } });
+    if (!space || !space.isActive) {
+      res.status(400).json({ error: 'El espacio seleccionado no existe o no está activo' });
       return;
     }
 
@@ -25,7 +41,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     await prisma.user.create({
-      data: { name, email, password: hashedPassword },
+      data: { name, email, password: hashedPassword, spaceId, organization: organization.trim() },
     });
 
     res.status(201).json({ message: 'Registro exitoso. Tu cuenta está pendiente de verificación por el administrador.' });
@@ -62,13 +78,17 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role, email: user.email },
+      { id: user.id, role: user.role, email: user.email, spaceId: user.spaceId ?? null },
       process.env.JWT_SECRET!,
       { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as jwt.SignOptions['expiresIn'] }
     );
 
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt },
+      user: {
+        id: user.id, name: user.name, email: user.email,
+        organization: user.organization, role: user.role,
+        spaceId: user.spaceId, createdAt: user.createdAt,
+      },
       token,
     });
   } catch (error) {
@@ -81,7 +101,7 @@ export const getMe = async (req: Request & { user?: { id: string } }, res: Respo
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, organization: true, role: true, spaceId: true, createdAt: true },
     });
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
@@ -95,9 +115,9 @@ export const getMe = async (req: Request & { user?: { id: string } }, res: Respo
 
 export const updateMe = async (req: Request & { user?: { id: string } }, res: Response): Promise<void> => {
   try {
-    const { name, email } = req.body;
+    const { name, email, organization } = req.body;
 
-    if (!name && !email) {
+    if (!name && !email && !organization) {
       res.status(400).json({ error: 'Debe proporcionar al menos un campo para actualizar' });
       return;
     }
@@ -112,8 +132,12 @@ export const updateMe = async (req: Request & { user?: { id: string } }, res: Re
 
     const user = await prisma.user.update({
       where: { id: req.user!.id },
-      data: { ...(name && { name }), ...(email && { email }) },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      data: {
+        ...(name && { name }),
+        ...(email && { email }),
+        ...(organization !== undefined && { organization: organization?.trim() || null }),
+      },
+      select: { id: true, name: true, email: true, organization: true, role: true, spaceId: true, createdAt: true },
     });
 
     res.json(user);

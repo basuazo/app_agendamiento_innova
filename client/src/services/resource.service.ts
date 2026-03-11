@@ -1,10 +1,10 @@
 import api from './api';
-import { Resource, ResourceCategory } from '../types';
+import { Resource } from '../types';
 
 export interface ResourceDto {
   name: string;
   description?: string;
-  category: ResourceCategory;
+  categoryId: string;
   requiresCertification?: boolean;
   capacity?: number;
   imageUrl?: string;

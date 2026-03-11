@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import * as xlsx from 'xlsx';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
 import { checkConflict } from '../services/booking.service';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/googleCalendar.service';
@@ -18,13 +18,14 @@ function fmtDateTime(d: Date) {
 
 const BOOKING_INCLUDE = {
   user: { select: { id: true, name: true, email: true } },
-  resource: { select: { id: true, name: true, category: true } },
+  resource: { select: { id: true, name: true, category: { select: { id: true, name: true, slug: true, color: true } } } },
 };
 
 export const getAllBookings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const bookings = await prisma.booking.findMany({
-      where: { status: 'CONFIRMED' },
+      where: { status: 'CONFIRMED', ...(spaceId ? { resource: { spaceId } } : {}) },
       include: BOOKING_INCLUDE,
       orderBy: { startTime: 'asc' },
     });
@@ -36,7 +37,9 @@ export const getAllBookings = async (req: AuthRequest, res: Response): Promise<v
 
 export const getAdminBookings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const bookings = await prisma.booking.findMany({
+      where: spaceId ? { resource: { spaceId } } : {},
       include: BOOKING_INCLUDE,
       orderBy: { startTime: 'desc' },
     });
@@ -75,9 +78,10 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
       endTime: { gt: startTime },
     };
 
+    const spaceId = resolveSpaceId(req);
     const resources = await prisma.resource.findMany({
-      where: { isActive: true },
-      select: { id: true, category: true, capacity: true },
+      where: { isActive: true, ...(spaceId ? { spaceId } : {}) },
+      select: { id: true, category: { select: { slug: true } }, capacity: true },
     });
 
     const confirmedBookings = await prisma.booking.findMany({
@@ -86,13 +90,13 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
     });
 
     const trainings = await prisma.training.findMany({
-      where: overlapWhere,
+      where: { ...overlapWhere, ...(spaceId ? { spaceId } : {}) },
       include: { exemptions: { select: { resourceId: true } } },
     });
 
     // Identify cross-block: if any MESON_CORTE booking exists, ESPACIO_REUNION is blocked (and vice versa)
-    const mesonResource = resources.find((r) => r.category === 'MESON_CORTE');
-    const reunionResource = resources.find((r) => r.category === 'ESPACIO_REUNION');
+    const mesonResource = resources.find((r) => r.category.slug === 'MESON_CORTE');
+    const reunionResource = resources.find((r) => r.category.slug === 'ESPACIO_REUNION');
     const hasMesonBooking = mesonResource
       ? confirmedBookings.some((b) => b.resourceId === mesonResource.id)
       : false;
@@ -113,11 +117,11 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
       }
 
       // Cross-block checks
-      if (resource.category === 'ESPACIO_REUNION' && hasMesonBooking) {
+      if (resource.category.slug === 'ESPACIO_REUNION' && hasMesonBooking) {
         availability[resource.id] = { status: 'blocked', reason: 'Mesones en uso' };
         continue;
       }
-      if (resource.category === 'MESON_CORTE' && hasReunionBooking) {
+      if (resource.category.slug === 'MESON_CORTE' && hasReunionBooking) {
         availability[resource.id] = { status: 'blocked', reason: 'Espacio de Reuniones reservado' };
         continue;
       }
@@ -158,7 +162,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
     const { resourceId, startTime: startRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId } = req.body;
 
     // Admin puede agendar en nombre de otra usuaria
-    const bookingUserId = (req.user!.role === 'ADMIN' && targetUserId) ? targetUserId : req.user!.id;
+    const bookingUserId = (['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && targetUserId) ? targetUserId : req.user!.id;
 
     if (!resourceId || !startRaw || !purpose) {
       res.status(400).json({ error: 'resourceId, startTime y purpose son requeridos' });
@@ -184,7 +188,10 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const resource = await prisma.resource.findUnique({ where: { id: resourceId } });
+    const resource = await prisma.resource.findUnique({
+      where: { id: resourceId },
+      include: { category: { select: { id: true, name: true, slug: true, color: true } } },
+    });
     if (!resource) {
       res.status(404).json({ error: 'Recurso no encontrado' });
       return;
@@ -206,9 +213,11 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    // Cross-blocking: ESPACIO_REUNION ↔ MESON_CORTE
-    if (resource.category === 'ESPACIO_REUNION') {
-      const mesonRes = await prisma.resource.findFirst({ where: { category: 'MESON_CORTE', isActive: true } });
+    // Cross-blocking: ESPACIO_REUNION ↔ MESON_CORTE (usa slug para compatibilidad con categorías dinámicas)
+    if (resource.category.slug === 'ESPACIO_REUNION') {
+      const mesonRes = await prisma.resource.findFirst({
+        where: { category: { slug: 'MESON_CORTE' }, isActive: true, spaceId: resource.spaceId },
+      });
       if (mesonRes) {
         const mesonConflict = await prisma.booking.findFirst({
           where: {
@@ -222,8 +231,10 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
         }
       }
     }
-    if (resource.category === 'MESON_CORTE') {
-      const reunionRes = await prisma.resource.findFirst({ where: { category: 'ESPACIO_REUNION', isActive: true } });
+    if (resource.category.slug === 'MESON_CORTE') {
+      const reunionRes = await prisma.resource.findFirst({
+        where: { category: { slug: 'ESPACIO_REUNION' }, isActive: true, spaceId: resource.spaceId },
+      });
       if (reunionRes) {
         const reunionConflict = await prisma.booking.findFirst({
           where: {
@@ -253,8 +264,8 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
     // Validar asistentes
     const attendees = Math.max(1, Number(attendeesRaw) || 1);
 
-    // Límite de ocupación: máximo 12 personas por bloque horario (no aplica a ADMIN)
-    if (req.user!.role !== 'ADMIN') {
+    // Límite de ocupación: máximo 12 personas por bloque horario (no aplica a ADMIN/SUPER_ADMIN)
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role)) {
       const occupancy = await prisma.booking.aggregate({
         _sum: { attendees: true },
         where: {
@@ -275,12 +286,12 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     // Verificar certificación y modo privado para determinar status
     let bookingStatus: 'CONFIRMED' | 'PENDING' = 'CONFIRMED';
-    if (resource.category === 'ESPACIO_REUNION' && isPrivate) {
+    if (resource.category.slug === 'ESPACIO_REUNION' && isPrivate) {
       // Modo privado → siempre requiere aprobación del admin
       bookingStatus = 'PENDING';
-    } else if (req.user!.role !== 'ADMIN' && resource.requiresCertification) {
+    } else if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && resource.requiresCertification) {
       const cert = await prisma.certification.findUnique({
-        where: { userId_resourceCategory: { userId: req.user!.id, resourceCategory: resource.category } },
+        where: { userId_categoryId: { userId: req.user!.id, categoryId: resource.categoryId } },
       });
       if (!cert) bookingStatus = 'PENDING';
     }
@@ -321,7 +332,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
         description,
         startTime,
         endTime,
-        resourceType: resource.category,
+        resourceType: resource.category.slug,
       });
 
       if (googleEventId) {
@@ -356,7 +367,7 @@ export const cancelBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    if (req.user!.role !== 'ADMIN' && booking.userId !== req.user!.id) {
+    if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && booking.userId !== req.user!.id) {
       res.status(403).json({ error: 'No tienes permiso para cancelar esta reserva' });
       return;
     }
@@ -372,7 +383,7 @@ export const cancelBooking = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     // Log when an admin cancels another user's booking
-    if (req.user!.role === 'ADMIN' && booking.userId !== req.user!.id) {
+    if (['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && booking.userId !== req.user!.id) {
       await logAudit({
         actorId: req.user!.id,
         action: 'BOOKING_CANCELLED',
@@ -398,7 +409,7 @@ export const approveBooking = async (req: AuthRequest, res: Response): Promise<v
       where: { id: req.params.id },
       include: {
         user: { select: { id: true, name: true, email: true } },
-        resource: true,
+        resource: { include: { category: { select: { id: true, name: true, slug: true, color: true } } } },
       },
     });
 
@@ -428,7 +439,7 @@ export const approveBooking = async (req: AuthRequest, res: Response): Promise<v
       description,
       startTime: booking.startTime,
       endTime: booking.endTime,
-      resourceType: booking.resource.category,
+      resourceType: (booking.resource as { category: { slug: string } }).category.slug,
     });
 
     if (googleEventId) {
@@ -506,7 +517,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 export const exportBookings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const bookings = await prisma.booking.findMany({
+      where: spaceId ? { resource: { spaceId } } : {},
       include: BOOKING_INCLUDE,
       orderBy: { startTime: 'desc' },
     });
@@ -516,7 +529,7 @@ export const exportBookings = async (req: AuthRequest, res: Response): Promise<v
       'Hora Inicio': fmtTime(new Date(b.startTime)),
       'Hora Fin': fmtTime(new Date(b.endTime)),
       Recurso: (b.resource as { name: string }).name,
-      Categoría: (b.resource as { category: string }).category,
+      Categoría: (b.resource as { category: { name: string } }).category.name,
       Usuario: (b.user as { name: string }).name,
       'Email Usuario': (b.user as { email: string }).email,
       Propósito: PURPOSE_LABELS[b.purpose] ?? b.purpose,

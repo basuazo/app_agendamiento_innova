@@ -2,7 +2,17 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 export interface AuthRequest extends Request {
-  user?: { id: string; role: string; email: string };
+  user?: { id: string; role: string; email: string; spaceId?: string | null };
+}
+
+/** Devuelve el spaceId que aplica para la petición actual.
+ *  - SUPER_ADMIN: lee el header X-Space-Id (puede ser null si no se especifica)
+ *  - ADMIN/USER:  devuelve su propio spaceId */
+export function resolveSpaceId(req: AuthRequest): string | null {
+  if (req.user?.role === 'SUPER_ADMIN') {
+    return (req.headers['x-space-id'] as string) || null;
+  }
+  return req.user?.spaceId ?? null;
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction): void => {
@@ -18,6 +28,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       id: string;
       role: string;
       email: string;
+      spaceId?: string | null;
     };
     req.user = decoded;
     next();

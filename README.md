@@ -1,6 +1,6 @@
-# CoWork — App de Agendamiento de Espacios y Máquinas
+# CoWork — App de Agendamiento de Máquinas y Espacios
 
-Aplicación web para gestionar reservas de máquinas y espacios de trabajo compartidos.
+Aplicación web full-stack para gestionar reservas de máquinas textiles y espacios de coworking. Soporta múltiples centros productivos (espacios), certificaciones por categoría de máquina, aprobación de usuarios nuevos y sincronización opcional con Google Calendar.
 
 ## Stack
 
@@ -8,73 +8,57 @@ Aplicación web para gestionar reservas de máquinas y espacios de trabajo compa
 - **Backend**: Node.js + Express + TypeScript
 - **Base de datos**: PostgreSQL + Prisma ORM
 - **Auth**: JWT + bcrypt
-- **Google Calendar**: API con Service Account
+- **Google Calendar**: API con Service Account (opcional)
 
 ---
 
 ## Requisitos previos
 
 - Node.js v18 o superior
-- PostgreSQL corriendo localmente (o Docker)
+- Docker (recomendado para la BD) o PostgreSQL local
 
 ---
 
 ## Instalación
 
-### 1. Clonar y entrar al proyecto
-
-```bash
-cd "App para reservas"
-```
-
-### 2. Configurar variables de entorno
+### 1. Configurar variables de entorno
 
 ```bash
 cp .env.example server/.env
 ```
 
-Editar `server/.env` con tus valores:
+Editar `server/.env`:
 
 ```env
-DATABASE_URL="postgresql://postgres:tu_password@localhost:5432/cowork_db"
+DATABASE_URL="postgresql://postgres:cowork123@localhost:5432/cowork_db"
 JWT_SECRET="cambia_esto_por_algo_seguro_de_al_menos_32_caracteres"
 JWT_EXPIRES_IN="7d"
 PORT=3001
 CLIENT_URL="http://localhost:5173"
 
-# Google Calendar (opcional — ver sección abajo)
+# Google Calendar (opcional)
 GOOGLE_CALENDAR_ID=""
 GOOGLE_SERVICE_ACCOUNT_EMAIL=""
 GOOGLE_PRIVATE_KEY=""
 ```
 
+### 2. Levantar la base de datos
+
+```bash
+docker compose up db -d
+```
+
+O con PostgreSQL local: crear la DB manualmente y ajustar `DATABASE_URL`.
+
 ### 3. Instalar dependencias
 
 ```bash
-# Dependencias raíz
 npm install
-
-# Dependencias del servidor
 cd server && npm install && cd ..
-
-# Dependencias del cliente
 cd client && npm install && cd ..
 ```
 
-O en un solo paso:
-
-```bash
-npm run install:all
-```
-
-### 4. Crear la base de datos
-
-```bash
-# Crear la base de datos en PostgreSQL
-psql -U postgres -c "CREATE DATABASE cowork_db;"
-```
-
-### 5. Ejecutar migraciones
+### 4. Ejecutar migraciones
 
 ```bash
 cd server
@@ -82,21 +66,15 @@ npx prisma migrate dev --name init
 cd ..
 ```
 
-> El schema path (`../prisma/schema.prisma`) ya está configurado en `server/package.json`.
-
-### 6. Ejecutar el seed
+### 5. Ejecutar el seed
 
 ```bash
-npm run seed
+cd server && npm run seed
 ```
 
-Esto crea:
-- **1 admin**: `admin@cowork.cl` / `admin123`
-- **3 usuarios**: `maria@test.cl`, `juan@test.cl`, `sofia@test.cl` / `password123`
-- **5 recursos**: Mesa de Corte Láser, Escritorio Creativo, Computador CAD, Impresora 3D, Sala de Reuniones
-- **6 reservas de prueba** en la semana actual
+Crea los usuarios de prueba (ver sección Credenciales) y datos de ejemplo.
 
-### 7. Ejecutar en desarrollo
+### 6. Iniciar en desarrollo
 
 ```bash
 npm run dev
@@ -107,48 +85,52 @@ npm run dev
 
 ---
 
-## Configurar Google Calendar (opcional)
+## Credenciales de prueba
 
-Si no configuras Google Calendar, la app funciona igualmente. Las reservas solo se guardan en PostgreSQL.
+| Rol | Email | Contraseña | Acceso |
+|-----|-------|------------|--------|
+| Super Admin | super@cowork.cl | super123 | Todos los espacios |
+| Admin | admin@cowork.cl | admin123 | Espacio 1 |
+| Usuario | maria@test.cl | password123 | Espacio 1 |
+| Usuario | juan@test.cl | password123 | Espacio 1 |
+| Usuario | sofia@test.cl | password123 | Espacio 1 |
 
-### Pasos para activar la integración:
+---
 
-#### 1. Crear proyecto en Google Cloud
+## Roles y permisos
 
-1. Ir a [console.cloud.google.com](https://console.cloud.google.com)
-2. Crear nuevo proyecto o seleccionar uno existente
-3. Ir a **APIs y servicios → Biblioteca**
-4. Buscar y habilitar **Google Calendar API**
+| Rol | Descripción |
+|-----|-------------|
+| `SUPER_ADMIN` | Gestiona todos los espacios. Selecciona el espacio activo en el Navbar. Sin spaceId propio. |
+| `ADMIN` | Administra su espacio: usuarios, recursos, categorías, reservas, certificaciones, horarios. |
+| `USER` | Reserva máquinas, solicita certificaciones, accede a la comunidad. |
 
-#### 2. Crear Service Account
+El registro de nuevos usuarios queda en estado **pendiente** hasta que un admin lo verifique.
 
-1. Ir a **APIs y servicios → Credenciales → Crear credenciales → Cuenta de servicio**
-2. Nombre: `cowork-app`
-3. Rol: ninguno (solo necesita acceso al calendario)
-4. Una vez creada, ir a la cuenta → pestaña **Claves** → **Agregar clave → JSON**
-5. Descargar el archivo JSON
+---
 
-#### 3. Crear Google Calendar compartido
+## Arquitectura multi-espacio
 
-1. Abrir [calendar.google.com](https://calendar.google.com)
-2. Crear nuevo calendario: **Otros calendarios → + Crear calendario**
-3. Nombre: `CoWork — Reservas`
-4. En **Configuración del calendario → Compartir con personas específicas**:
-   - Agregar el email del service account (del archivo JSON)
-   - Permiso: **Realizar cambios en eventos**
-5. En **Integrar calendario**, copiar el **ID del calendario** (formato: `xxx@group.calendar.google.com`)
+Cada **Space** (centro productivo) tiene sus propias:
+- **Categorías** de máquinas (dinámicas, con nombre y color personalizados)
+- **Recursos** (máquinas/equipos) agrupados por categoría
+- **Usuarios** (ADMIN y USER)
+- **Horarios de negocio** configurables
 
-#### 4. Configurar variables de entorno
+El header `X-Space-Id` se envía automáticamente en cada request del frontend. El backend usa `resolveSpaceId(req)` para determinar el espacio activo según el rol.
 
-En `server/.env`:
+---
 
-```env
-GOOGLE_CALENDAR_ID="el-id-del-calendario@group.calendar.google.com"
-GOOGLE_SERVICE_ACCOUNT_EMAIL="cowork-app@tu-proyecto.iam.gserviceaccount.com"
-GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nCONTENIDO_DE_LA_CLAVE\n-----END PRIVATE KEY-----\n"
-```
+## Features principales
 
-> El `private_key` del archivo JSON tiene saltos de línea reales; en el `.env` deben ser `\n` literales.
+- **Calendario de reservas**: vista semanal con slots por hora. Click en celda para reservar, click en slot ocupado para ver detalle. Horario configurable por espacio (BusinessHours).
+- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
+- **Capacitaciones**: el admin bloquea rangos horarios de recursos para sesiones de capacitación.
+- **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
+- **Tablas admin ordenables**: todas las tablas admin permiten ordenar A→Z / Z→A por cualquier columna y filtrar con búsqueda de texto en tiempo real.
+- **Admin agenda por usuaria**: el administrador puede crear reservas a nombre de cualquier usuaria del espacio.
+- **Exportación**: las reservas se pueden exportar a Excel desde la vista de administrador.
+- **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
 ---
 
@@ -156,12 +138,27 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nCONTENIDO_DE_LA_CLAVE\n-----END
 
 | Comando | Descripción |
 |---------|-------------|
-| `npm run dev` | Inicia cliente y servidor en paralelo |
-| `npm run dev:server` | Solo el servidor (puerto 3001) |
-| `npm run dev:client` | Solo el cliente (puerto 5173) |
-| `npm run seed` | Poblar la base de datos con datos de prueba |
-| `npm run db:migrate` | Ejecutar migraciones de Prisma |
-| `npm run db:studio` | Abrir Prisma Studio (explorador visual de BD) |
+| `npm run dev` | Cliente (5173) + servidor (3001) en paralelo |
+| `npm run build:prod` | Build completo para producción |
+| `npm run start` | Inicia en producción (requiere build previo) |
+| `cd server && npm run seed` | Poblar BD con datos de prueba |
+| `cd server && npx prisma migrate dev --name <nombre>` | Nueva migración |
+| `cd server && npx prisma studio` | Explorador visual de BD |
+| `docker compose up db -d` | Levantar solo la BD en Docker |
+
+---
+
+## Configurar Google Calendar (opcional)
+
+Si no se configura, la app funciona igualmente. Las reservas solo se guardan en PostgreSQL.
+
+1. Crear proyecto en [Google Cloud Console](https://console.cloud.google.com)
+2. Habilitar **Google Calendar API**
+3. Crear una **Service Account** y descargar el JSON de credenciales
+4. Crear un calendario en [calendar.google.com](https://calendar.google.com) y compartirlo con el email del service account (permiso: *Realizar cambios en eventos*)
+5. Copiar el ID del calendario y las credenciales del service account a `server/.env`
+
+> El `private_key` del JSON tiene saltos de línea reales; en el `.env` deben ser `\n` literales.
 
 ---
 
@@ -170,47 +167,30 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nCONTENIDO_DE_LA_CLAVE\n-----END
 ```
 /
 ├── client/          # React + Vite frontend
+│   └── src/
+│       ├── pages/
+│       │   ├── admin/       # UsersPage, BookingsPage, ResourcesPage, etc.
+│       │   └── superadmin/  # SpacesPage
+│       ├── components/shared/  # Navbar, ConfirmModal, SortableHeader, etc.
+│       └── store/           # Zustand: authStore, bookingStore, resourceStore
 ├── server/          # Express API
-├── prisma/          # Schema y seed
-├── .env.example     # Variables de entorno documentadas
-└── README.md
+│   └── src/
+│       ├── controllers/
+│       ├── routes/
+│       ├── middleware/      # auth, role, upload
+│       └── services/        # booking, googleCalendar
+├── prisma/          # Schema y migraciones
+└── .env.example
 ```
-
----
-
-## API Reference
-
-### Autenticación
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| POST | `/api/auth/register` | Registro de usuario |
-| POST | `/api/auth/login` | Login → JWT |
-| GET | `/api/auth/me` | Usuario autenticado |
-
-### Recursos
-| Método | Ruta | Auth | Descripción |
-|--------|------|------|-------------|
-| GET | `/api/resources` | User | Lista recursos activos |
-| POST | `/api/resources` | Admin | Crear recurso |
-| PUT | `/api/resources/:id` | Admin | Editar recurso |
-| PATCH | `/api/resources/:id/toggle` | Admin | Activar/desactivar |
-
-### Reservas
-| Método | Ruta | Auth | Descripción |
-|--------|------|------|-------------|
-| GET | `/api/bookings` | User | Todas las confirmadas |
-| GET | `/api/bookings/mine` | User | Mis reservas |
-| POST | `/api/bookings` | User | Crear reserva |
-| PATCH | `/api/bookings/:id/cancel` | User | Cancelar reserva |
-| GET | `/api/bookings/admin/all` | Admin | Todas con detalles |
 
 ---
 
 ## Reglas de negocio
 
-- Bloques horarios de **1 hora**, de **09:00 a 17:00** (8 slots por día)
-- No se puede reservar en el **pasado**
-- **Conflicto de reservas**: error 409 si el recurso ya está ocupado en ese horario
-- Propósito **PRODUCE** requiere indicar qué se producirá y cuántas unidades
-- Recursos **desactivados** no aparecen disponibles para reservar
-- Usuarios cancelan solo sus propias reservas; admins pueden cancelar cualquiera
+- Slots de **1 hora**; horario configurable por espacio (default lun–sáb 09:00–17:00)
+- **Certificación por categoría**, no por máquina individual. Sin cert → reserva PENDING
+- Admin y recursos con `requiresCertification=false` → reserva CONFIRMED directa
+- **Conflicto**: `startA < endB AND endA > startB` → error 409
+- Google Calendar sincroniza solo reservas CONFIRMED
+- Máximo **10 usuarias** por sesión de certificación
+- Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar

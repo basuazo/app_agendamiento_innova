@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { settingsService } from '../../services/settings.service';
 import { BusinessHours } from '../../types';
+import { useAuthStore } from '../../store/authStore';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -22,11 +23,18 @@ const DEFAULT_HOURS: DayState[] = Array.from({ length: 7 }, (_, i) => ({
 }));
 
 export default function SettingsPage() {
+  const { currentSpaceId, user } = useAuthStore();
   const [days, setDays] = useState<DayState[]>(DEFAULT_HOURS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    // SUPER_ADMIN necesita tener un espacio seleccionado
+    if (user?.role === 'SUPER_ADMIN' && !currentSpaceId) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
     settingsService.getBusinessHours().then((data) => {
       if (data.length === 7) {
         setDays(
@@ -42,7 +50,7 @@ export default function SettingsPage() {
     }).finally(() => {
       setIsLoading(false);
     });
-  }, []);
+  }, [currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = (dayOfWeek: number, patch: Partial<DayState>) => {
     setDays((prev) =>
@@ -63,6 +71,16 @@ export default function SettingsPage() {
   };
 
   if (isLoading) return <LoadingSpinner />;
+
+  if (user?.role === 'SUPER_ADMIN' && !currentSpaceId) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="text-center py-16 text-gray-400 text-sm">
+          Selecciona un espacio en el menú superior para ver sus horarios
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">

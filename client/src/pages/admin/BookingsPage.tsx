@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Booking } from '../../types';
 import { bookingService } from '../../services/booking.service';
-import { formatDateTime, PURPOSE_LABELS, RESOURCE_CATEGORY_COLORS } from '../../utils/dateHelpers';
+import { formatDateTime, PURPOSE_LABELS } from '../../utils/dateHelpers';
+import { useAuthStore } from '../../store/authStore';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
+import SortableHeader, { SortState, toggleSort, compareVals } from '../../components/shared/SortableHeader';
 import toast from 'react-hot-toast';
 
 type FilterType = 'ALL' | 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED';
@@ -15,9 +17,13 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 export default function BookingsPage() {
+  const { currentSpaceId } = useAuthStore();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('ALL');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortState | null>(null);
+  const handleSort = (key: string) => setSort(toggleSort(sort, key));
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -35,7 +41,7 @@ export default function BookingsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExport = async () => {
     setExporting(true);
@@ -96,7 +102,28 @@ export default function BookingsPage() {
   };
 
   const pendingCount = bookings.filter((b) => b.status === 'PENDING').length;
-  const filtered = bookings.filter((b) => filter === 'ALL' || b.status === filter);
+
+  const displayBookings = useMemo(() => {
+    const q = search.toLowerCase();
+    const byStatus = bookings.filter((b) => filter === 'ALL' || b.status === filter);
+    const bySearch = q
+      ? byStatus.filter((b) =>
+          b.resource.name.toLowerCase().includes(q) ||
+          b.user.name.toLowerCase().includes(q) ||
+          b.user.email.toLowerCase().includes(q)
+        )
+      : byStatus;
+    if (!sort) return bySearch;
+    return [...bySearch].sort((a, b) => {
+      const val = (x: typeof a) =>
+        sort.key === 'resource' ? x.resource.name :
+        sort.key === 'user' ? x.user.name :
+        sort.key === 'startTime' ? x.startTime :
+        sort.key === 'purpose' ? x.purpose :
+        sort.key === 'status' ? x.status : '';
+      return compareVals(val(a), val(b), sort.dir);
+    });
+  }, [bookings, filter, search, sort]);
 
   const filterLabels: Record<FilterType, string> = {
     ALL: 'Todas',
@@ -122,6 +149,16 @@ export default function BookingsPage() {
         </button>
       </div>
 
+      <div className="mb-4">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por recurso o usuario..."
+          className="w-full max-w-sm border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+        />
+      </div>
+
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6 flex-wrap">
         {(['ALL', 'PENDING', 'CONFIRMED', 'CANCELLED', 'REJECTED'] as FilterType[]).map((f) => (
           <button
@@ -144,16 +181,16 @@ export default function BookingsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Recurso</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Usuario</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Fecha y Hora</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Propósito</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-600">Estado</th>
+                  <SortableHeader label="Recurso" sortKey="resource" sort={sort} onSort={handleSort} className="text-left" />
+                  <SortableHeader label="Usuario" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
+                  <SortableHeader label="Fecha y Hora" sortKey="startTime" sort={sort} onSort={handleSort} className="text-left" />
+                  <SortableHeader label="Propósito" sortKey="purpose" sort={sort} onSort={handleSort} className="text-left" />
+                  <SortableHeader label="Estado" sortKey="status" sort={sort} onSort={handleSort} className="text-center" />
                   <th className="px-4 py-3 text-right font-medium text-gray-600">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map((b) => {
+                {displayBookings.map((b) => {
                   const badge = STATUS_BADGE[b.status] ?? { label: b.status, className: 'bg-gray-100 text-gray-600' };
                   return (
                     <tr key={b.id} className={b.status === 'CANCELLED' || b.status === 'REJECTED' ? 'opacity-60' : ''}>
@@ -161,7 +198,7 @@ export default function BookingsPage() {
                         <div className="flex items-center gap-2">
                           <div
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: RESOURCE_CATEGORY_COLORS[b.resource.category] ?? '#6b7280' }}
+                            style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }}
                           />
                           <span className="font-medium text-gray-900">{b.resource.name}</span>
                         </div>
@@ -222,7 +259,7 @@ export default function BookingsPage() {
                 })}
               </tbody>
             </table>
-            {filtered.length === 0 && (
+            {displayBookings.length === 0 && (
               <div className="text-center py-12 text-gray-400 text-sm">No hay reservas en esta sección</div>
             )}
           </div>

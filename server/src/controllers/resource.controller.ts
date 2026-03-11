@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
 import prisma from '../lib/prisma';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 
-export const getResources = async (req: Request, res: Response): Promise<void> => {
+const RESOURCE_INCLUDE = {
+  category: { select: { id: true, name: true, slug: true, color: true } },
+};
+
+export const getResources = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const includeInactive = req.query.all === 'true';
+    const spaceId = resolveSpaceId(req);
+    const spaceFilter = spaceId ? { spaceId } : {};
     const resources = await prisma.resource.findMany({
-      where: includeInactive ? undefined : { isActive: true },
+      where: { ...spaceFilter, ...(includeInactive ? {} : { isActive: true }) },
+      include: RESOURCE_INCLUDE,
       orderBy: { createdAt: 'asc' },
     });
     res.json(resources);
@@ -16,7 +24,10 @@ export const getResources = async (req: Request, res: Response): Promise<void> =
 
 export const getResourceById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const resource = await prisma.resource.findUnique({ where: { id: req.params.id } });
+    const resource = await prisma.resource.findUnique({
+      where: { id: req.params.id },
+      include: RESOURCE_INCLUDE,
+    });
     if (!resource) {
       res.status(404).json({ error: 'Recurso no encontrado' });
       return;
@@ -27,20 +38,27 @@ export const getResourceById = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const createResource = async (req: Request, res: Response): Promise<void> => {
+export const createResource = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, description, category, requiresCertification, imageUrl, capacity } = req.body;
-    if (!name || !category) {
+    const { name, description, categoryId, requiresCertification, imageUrl, capacity } = req.body;
+    if (!name || !categoryId) {
       res.status(400).json({ error: 'Nombre y categoría son requeridos' });
+      return;
+    }
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Se requiere contexto de espacio' });
       return;
     }
     const resource = await prisma.resource.create({
       data: {
-        name, description, category,
+        name, description, categoryId,
         requiresCertification: requiresCertification !== false,
         imageUrl,
         capacity: capacity ? Number(capacity) : 1,
+        spaceId,
       },
+      include: RESOURCE_INCLUDE,
     });
     res.status(201).json(resource);
   } catch (error) {
@@ -50,13 +68,14 @@ export const createResource = async (req: Request, res: Response): Promise<void>
 
 export const updateResource = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, description, category, requiresCertification, imageUrl, capacity } = req.body;
+    const { name, description, categoryId, requiresCertification, imageUrl, capacity } = req.body;
     const resource = await prisma.resource.update({
       where: { id: req.params.id },
       data: {
-        name, description, category, requiresCertification, imageUrl,
+        name, description, categoryId, requiresCertification, imageUrl,
         ...(capacity !== undefined && { capacity: Number(capacity) }),
       },
+      include: RESOURCE_INCLUDE,
     });
     res.json(resource);
   } catch (error) {
@@ -74,6 +93,7 @@ export const toggleResource = async (req: Request, res: Response): Promise<void>
     const updated = await prisma.resource.update({
       where: { id: req.params.id },
       data: { isActive: !resource.isActive },
+      include: RESOURCE_INCLUDE,
     });
     res.json(updated);
   } catch (error) {

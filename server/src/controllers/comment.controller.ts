@@ -1,12 +1,14 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
 
 const VALID_TAGS = ['GENERAL', 'MACHINE_ISSUE', 'ORDER', 'CLEANING'];
 
 export const getComments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const comments = await prisma.comment.findMany({
+      where: spaceId ? { spaceId } : {},
       include: {
         user: { select: { id: true, name: true } },
       },
@@ -39,12 +41,19 @@ export const createComment = async (req: AuthRequest, res: Response): Promise<vo
 
     const imageUrl = req.file ? req.file.filename : null;
 
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Se requiere contexto de espacio' });
+      return;
+    }
+
     const comment = await prisma.comment.create({
       data: {
         userId: req.user!.id,
         content: content.trim(),
         tag: tag as 'GENERAL' | 'MACHINE_ISSUE' | 'ORDER' | 'CLEANING',
         imageUrl,
+        spaceId,
       },
       include: {
         user: { select: { id: true, name: true } },

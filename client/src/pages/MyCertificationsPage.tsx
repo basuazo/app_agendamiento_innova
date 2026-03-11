@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Certification, CertificationRequest, ResourceCategory } from '../types';
+import { Certification, CertificationRequest, Category } from '../types';
 import { certificationService } from '../services/certification.service';
 import { useResourceStore } from '../store/resourceStore';
-import { RESOURCE_CATEGORY_LABELS, RESOURCE_CATEGORY_COLORS, formatDateTime } from '../utils/dateHelpers';
+import { formatDateTime } from '../utils/dateHelpers';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -11,13 +11,18 @@ export default function MyCertificationsPage() {
   const [certifications, setCertifications] = useState<Certification[]>([]);
   const [requests, setRequests] = useState<CertificationRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [requestingCat, setRequestingCat] = useState<ResourceCategory | null>(null);
+  const [requestingCat, setRequestingCat] = useState<string | null>(null);
 
-  const ALL_CATEGORIES_LIST = Object.keys(RESOURCE_CATEGORY_LABELS) as ResourceCategory[];
+  // Derivar categorías únicas desde los recursos (ordenadas por order)
+  const categoryMap = new Map<string, Category>();
+  for (const r of resources) {
+    if (!categoryMap.has(r.categoryId)) categoryMap.set(r.categoryId, r.category);
+  }
+  const allCategories = Array.from(categoryMap.values()).sort((a, b) => a.order - b.order);
 
-  // Categorías cuyo recurso requiere certificación (data-driven desde los recursos)
+  // Categorías que requieren certificación (algún recurso con requiresCertification)
   const certRequiredSet = new Set(
-    resources.filter((r) => r.requiresCertification).map((r) => r.category),
+    resources.filter((r) => r.requiresCertification).map((r) => r.categoryId),
   );
 
   const load = async () => {
@@ -41,10 +46,10 @@ export default function MyCertificationsPage() {
     load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRequest = async (cat: ResourceCategory) => {
-    setRequestingCat(cat);
+  const handleRequest = async (cat: Category) => {
+    setRequestingCat(cat.id);
     try {
-      await certificationService.requestCertification(cat);
+      await certificationService.requestCertification(cat.id);
       toast.success('Solicitud enviada al administrador');
       load();
     } catch (err: unknown) {
@@ -54,6 +59,7 @@ export default function MyCertificationsPage() {
       setRequestingCat(null);
     }
   };
+
 
   const handleCancelRequest = async (id: string) => {
     if (!confirm('¿Cancelar esta solicitud?')) return;
@@ -66,11 +72,11 @@ export default function MyCertificationsPage() {
     }
   };
 
-  const getCertForCat = (cat: ResourceCategory) =>
-    certifications.find((c) => c.resourceCategory === cat);
+  const getCertForCat = (cat: Category) =>
+    certifications.find((c) => c.categoryId === cat.id);
 
-  const getRequestForCat = (cat: ResourceCategory) =>
-    requests.find((r) => r.resourceCategory === cat);
+  const getRequestForCat = (cat: Category) =>
+    requests.find((r) => r.categoryId === cat.id);
 
   if (isLoading) {
     return (
@@ -88,22 +94,21 @@ export default function MyCertificationsPage() {
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {ALL_CATEGORIES_LIST.map((cat) => {
+        {allCategories.map((cat) => {
           const cert = getCertForCat(cat);
           const request = getRequestForCat(cat);
-          const color = RESOURCE_CATEGORY_COLORS[cat];
-          const requiresCert = certRequiredSet.has(cat);
+          const requiresCert = certRequiredSet.has(cat.id);
 
           return (
             <div
-              key={cat}
+              key={cat.id}
               className="bg-white rounded-xl border border-gray-100 shadow-sm p-4"
-              style={{ borderLeftColor: color, borderLeftWidth: 4 }}
+              style={{ borderLeftColor: cat.color, borderLeftWidth: 4 }}
             >
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
                 <h3 className="font-semibold text-gray-900 text-sm">
-                  {RESOURCE_CATEGORY_LABELS[cat]}
+                  {cat.name}
                 </h3>
               </div>
 
@@ -155,7 +160,7 @@ export default function MyCertificationsPage() {
                       </p>
                       <button
                         onClick={() => handleCancelRequest(request.id)}
-                        className="text-xs text-red-400 hover:text-red-600 mt-2"
+                        className="text-xs text-red-400 hover:text-red-600 mt-2 block"
                       >
                         Cancelar solicitud
                       </button>
@@ -170,10 +175,10 @@ export default function MyCertificationsPage() {
                       </div>
                       <button
                         onClick={() => handleRequest(cat)}
-                        disabled={requestingCat === cat}
+                        disabled={requestingCat === cat.id}
                         className="w-full py-1.5 border border-brand-300 text-brand-700 rounded-lg text-xs font-medium hover:bg-brand-50 disabled:opacity-60 transition-colors mt-2"
                       >
-                        {requestingCat === cat ? 'Enviando...' : 'Solicitar nuevamente'}
+                        {requestingCat === cat.id ? 'Enviando...' : 'Solicitar nuevamente'}
                       </button>
                     </>
                   ) : request.status === 'REJECTED' ? (
@@ -187,10 +192,10 @@ export default function MyCertificationsPage() {
                       )}
                       <button
                         onClick={() => handleRequest(cat)}
-                        disabled={requestingCat === cat}
+                        disabled={requestingCat === cat.id}
                         className="w-full py-1.5 border border-brand-300 text-brand-700 rounded-lg text-xs font-medium hover:bg-brand-50 disabled:opacity-60 transition-colors mt-2"
                       >
-                        {requestingCat === cat ? 'Enviando...' : 'Solicitar nuevamente'}
+                        {requestingCat === cat.id ? 'Enviando...' : 'Solicitar nuevamente'}
                       </button>
                     </>
                   ) : null}
@@ -202,10 +207,10 @@ export default function MyCertificationsPage() {
                   </p>
                   <button
                     onClick={() => handleRequest(cat)}
-                    disabled={requestingCat === cat}
+                    disabled={requestingCat === cat.id}
                     className="w-full py-1.5 border border-brand-300 text-brand-700 rounded-lg text-xs font-medium hover:bg-brand-50 disabled:opacity-60 transition-colors"
                   >
-                    {requestingCat === cat ? 'Enviando...' : 'Solicitar Certificación'}
+                    {requestingCat === cat.id ? 'Enviando...' : 'Solicitar Certificación'}
                   </button>
                 </div>
               )}

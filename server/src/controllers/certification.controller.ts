@@ -1,15 +1,19 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
 import { logAudit } from '../lib/audit';
 
+const CATEGORY_SELECT = { select: { id: true, name: true, slug: true, color: true } };
+
 const REQUEST_INCLUDE = {
   user: { select: { id: true, name: true, email: true } },
+  category: CATEGORY_SELECT,
 };
 
 const CERT_INCLUDE = {
   user: { select: { id: true, name: true, email: true } },
   certifier: { select: { id: true, name: true } },
+  category: CATEGORY_SELECT,
 };
 
 // ── Usuario ──────────────────────────────────────────────────────────────────
@@ -18,7 +22,7 @@ export const getMyCertifications = async (req: AuthRequest, res: Response): Prom
   try {
     const certs = await prisma.certification.findMany({
       where: { userId: req.user!.id },
-      include: { certifier: { select: { name: true } } },
+      include: { certifier: { select: { name: true } }, category: CATEGORY_SELECT },
       orderBy: { certifiedAt: 'desc' },
     });
     res.json(certs);
@@ -31,6 +35,7 @@ export const getMyRequests = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const requests = await prisma.certificationRequest.findMany({
       where: { userId: req.user!.id },
+      include: { category: CATEGORY_SELECT },
       orderBy: { createdAt: 'desc' },
     });
     res.json(requests);
@@ -41,20 +46,18 @@ export const getMyRequests = async (req: AuthRequest, res: Response): Promise<vo
 
 export const requestCertification = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { resourceCategory } = req.body;
-    if (!resourceCategory) {
-      res.status(400).json({ error: 'resourceCategory es requerido' });
+    const { categoryId } = req.body;
+    if (!categoryId) {
+      res.status(400).json({ error: 'categoryId es requerido' });
       return;
     }
 
     // Verificar si ya existe una solicitud activa o certificación
     const existing = await prisma.certificationRequest.findUnique({
-      where: { userId_resourceCategory: { userId: req.user!.id, resourceCategory } },
+      where: { userId_categoryId: { userId: req.user!.id, categoryId } },
     });
     if (existing) {
       if (existing.status === 'REJECTED' || existing.status === 'APPROVED') {
-        // REJECTED: solicitud denegada → puede volver a solicitar
-        // APPROVED: certificación revocada por admin, la solicitud quedó huérfana → limpiar
         await prisma.certificationRequest.delete({ where: { id: existing.id } });
       } else {
         res.status(409).json({ error: 'Ya tienes una solicitud activa para esta categoría' });
@@ -63,7 +66,7 @@ export const requestCertification = async (req: AuthRequest, res: Response): Pro
     }
 
     const alreadyCertified = await prisma.certification.findUnique({
-      where: { userId_resourceCategory: { userId: req.user!.id, resourceCategory } },
+      where: { userId_categoryId: { userId: req.user!.id, categoryId } },
     });
     if (alreadyCertified) {
       res.status(409).json({ error: 'Ya estás certificada en esta categoría' });
@@ -71,7 +74,8 @@ export const requestCertification = async (req: AuthRequest, res: Response): Pro
     }
 
     const request = await prisma.certificationRequest.create({
-      data: { userId: req.user!.id, resourceCategory },
+      data: { userId: req.user!.id, categoryId },
+      include: { category: CATEGORY_SELECT },
     });
     res.status(201).json(request);
   } catch {
@@ -108,8 +112,12 @@ export const cancelMyRequest = async (req: AuthRequest, res: Response): Promise<
 export const getAllRequests = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { status } = req.query;
+    const spaceId = resolveSpaceId(req);
     const requests = await prisma.certificationRequest.findMany({
-      where: status ? { status: status as import('@prisma/client').CertReqStatus } : undefined,
+      where: {
+        ...(status ? { status: status as import('@prisma/client').CertReqStatus } : {}),
+        ...(spaceId ? { user: { spaceId } } : {}),
+      },
       include: REQUEST_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
@@ -164,10 +172,10 @@ export const resolveRequest = async (req: AuthRequest, res: Response): Promise<v
 
     if (status === 'APPROVED') {
       await prisma.certification.upsert({
-        where: { userId_resourceCategory: { userId: request.userId, resourceCategory: request.resourceCategory } },
+        where: { userId_categoryId: { userId: request.userId, categoryId: request.categoryId } },
         create: {
           userId: request.userId,
-          resourceCategory: request.resourceCategory,
+          categoryId: request.categoryId,
           certifiedById: req.user!.id,
           notes,
         },
@@ -192,7 +200,7 @@ export const resolveRequest = async (req: AuthRequest, res: Response): Promise<v
       targetId: req.params.id,
       meta: {
         userId: request.userId,
-        resourceCategory: request.resourceCategory,
+        categoryId: request.categoryId,
         notes: notes ?? null,
       },
     });
@@ -205,7 +213,9 @@ export const resolveRequest = async (req: AuthRequest, res: Response): Promise<v
 
 export const getAllCertifications = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const certs = await prisma.certification.findMany({
+      where: spaceId ? { user: { spaceId } } : {},
       include: CERT_INCLUDE,
       orderBy: { certifiedAt: 'desc' },
     });
@@ -226,7 +236,7 @@ export const revokeCertification = async (req: AuthRequest, res: Response): Prom
     await prisma.$transaction([
       prisma.certification.delete({ where: { id: req.params.id } }),
       prisma.certificationRequest.deleteMany({
-        where: { userId: cert.userId, resourceCategory: cert.resourceCategory },
+        where: { userId: cert.userId, categoryId: cert.categoryId },
       }),
     ]);
 
@@ -235,7 +245,7 @@ export const revokeCertification = async (req: AuthRequest, res: Response): Prom
       action: 'CERTIFICATION_REVOKED',
       targetType: 'Certification',
       targetId: req.params.id,
-      meta: { userId: cert.userId, resourceCategory: cert.resourceCategory },
+      meta: { userId: cert.userId, categoryId: cert.categoryId },
     });
 
     res.json({ message: 'Certificación revocada' });

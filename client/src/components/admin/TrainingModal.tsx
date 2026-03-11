@@ -201,7 +201,7 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
                         className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                       />
                       <span className="text-sm text-gray-700">{r.name}</span>
-                      <span className="text-xs text-gray-400">({r.category})</span>
+                      <span className="text-xs text-gray-400">({r.category.name})</span>
                     </label>
                   ))}
                 </div>

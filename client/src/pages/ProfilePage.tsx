@@ -8,6 +8,7 @@ export default function ProfilePage() {
 
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [organization, setOrganization] = useState(user?.organization ?? '');
   const [profileLoading, setProfileLoading] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -19,6 +20,7 @@ export default function ProfilePage() {
     if (user) {
       setName(user.name);
       setEmail(user.email);
+      setOrganization(user.organization ?? '');
     }
   }, [user]);
 
@@ -26,7 +28,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setProfileLoading(true);
     try {
-      await updateProfile({ name, email });
+      await updateProfile({ name, email, organization });
       toast.success('Perfil actualizado correctamente');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -109,6 +111,16 @@ export default function ProfilePage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Agrupación u Organización</label>
+            <input
+              type="text"
+              value={organization}
+              onChange={(e) => setOrganization(e.target.value)}
+              placeholder="Ej: Taller Comunal Las Flores"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>

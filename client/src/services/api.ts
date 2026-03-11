@@ -11,6 +11,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const spaceId = localStorage.getItem('currentSpaceId');
+  if (spaceId) {
+    config.headers['X-Space-Id'] = spaceId;
+  }
   return config;
 });
 

@@ -9,12 +9,11 @@ import { settingsService } from '../services/settings.service';
 import CalendarView from '../components/calendar/CalendarView';
 import BookingModal from '../components/booking/BookingModal';
 import TrainingModal from '../components/admin/TrainingModal';
-import { RESOURCE_CATEGORY_COLORS, RESOURCE_CATEGORY_LABELS } from '../utils/dateHelpers';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
 export default function CalendarPage() {
-  const { user } = useAuthStore();
+  const { user, currentSpaceId } = useAuthStore();
   const { bookings, fetchAll, isLoading } = useBookingStore();
   const { resources, fetchAll: fetchResources } = useResourceStore();
 
@@ -26,8 +25,9 @@ export default function CalendarPage() {
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [certSessions, setCertSessions] = useState<CertificationRequest[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
+  const [hoursLoaded, setHoursLoaded] = useState(false);
 
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const fetchTrainings = async () => {
     try {
@@ -53,17 +53,20 @@ export default function CalendarPage() {
       const data = await settingsService.getBusinessHours();
       setBusinessHours(data);
     } catch {
-      // silent
+      // silent — el calendario usará horarios por defecto
+    } finally {
+      setHoursLoaded(true);
     }
   };
 
   useEffect(() => {
+    setHoursLoaded(false);
     fetchAll();
     fetchResources();
     fetchTrainings();
     fetchCertSessions();
     fetchBusinessHours();
-  }, [fetchAll, fetchResources]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchAll, fetchResources, currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSlotClick = (date: Date) => {
     setSelectedDate(date);
@@ -117,6 +120,8 @@ export default function CalendarPage() {
     }
   };
 
+  const calendarReady = !isLoading && hoursLoaded;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -155,13 +160,15 @@ export default function CalendarPage() {
       {/* Leyenda de colores por categoría */}
       {resources.length > 0 && (
         <div className="flex flex-wrap gap-3 mb-4">
-          {Array.from(new Set(resources.map((r) => r.category))).map((cat) => (
-            <div key={cat} className="flex items-center gap-1.5">
+          {Array.from(
+            new Map(resources.filter((r) => r.category).map((r) => [r.categoryId, r.category!])).values()
+          ).map((cat) => (
+            <div key={cat.id} className="flex items-center gap-1.5">
               <div
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: RESOURCE_CATEGORY_COLORS[cat] ?? '#6b7280' }}
+                style={{ backgroundColor: cat.color ?? '#6b7280' }}
               />
-              <span className="text-xs text-gray-600">{RESOURCE_CATEGORY_LABELS[cat]}</span>
+              <span className="text-xs text-gray-600">{cat.name}</span>
             </div>
           ))}
           {trainings.length > 0 && (
@@ -179,7 +186,7 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {isLoading ? (
+      {!calendarReady ? (
         <LoadingSpinner size="lg" />
       ) : (
         <CalendarView

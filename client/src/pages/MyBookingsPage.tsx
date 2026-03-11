@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBookingStore } from '../store/bookingStore';
 import { Booking } from '../types';
-import { formatDateTime, PURPOSE_LABELS, RESOURCE_CATEGORY_COLORS } from '../utils/dateHelpers';
+import { formatDateTime, PURPOSE_LABELS } from '../utils/dateHelpers';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -111,7 +111,7 @@ function BookingCard({
     }`}>
       <div
         className="w-3 h-full min-h-12 rounded-full flex-shrink-0 mt-1"
-        style={{ backgroundColor: RESOURCE_CATEGORY_COLORS[b.resource.category] ?? '#6b7280' }}
+        style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">

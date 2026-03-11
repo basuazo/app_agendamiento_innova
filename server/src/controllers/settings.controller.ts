@@ -1,9 +1,16 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import prisma from '../lib/prisma';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 
-export const getBusinessHours = async (_req: Request, res: Response): Promise<void> => {
+export const getBusinessHours = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Se requiere contexto de espacio' });
+      return;
+    }
     const hours = await prisma.businessHours.findMany({
+      where: { spaceId },
       orderBy: { dayOfWeek: 'asc' },
     });
     res.json(hours);
@@ -12,8 +19,14 @@ export const getBusinessHours = async (_req: Request, res: Response): Promise<vo
   }
 };
 
-export const updateBusinessHours = async (req: Request, res: Response): Promise<void> => {
+export const updateBusinessHours = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Se requiere contexto de espacio' });
+      return;
+    }
+
     const days: { dayOfWeek: number; isOpen: boolean; openTime: string; closeTime: string }[] = req.body;
 
     if (!Array.isArray(days) || days.length !== 7) {
@@ -36,9 +49,10 @@ export const updateBusinessHours = async (req: Request, res: Response): Promise<
     const updated = await Promise.all(
       days.map((d) =>
         prisma.businessHours.upsert({
-          where: { dayOfWeek: d.dayOfWeek },
+          where: { spaceId_dayOfWeek: { spaceId, dayOfWeek: d.dayOfWeek } },
           update: { isOpen: d.isOpen, openTime: d.openTime, closeTime: d.closeTime },
           create: {
+            spaceId,
             dayOfWeek: d.dayOfWeek,
             isOpen: d.isOpen,
             openTime: d.openTime,

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { spaceService } from '../services/space.service';
+import type { Space } from '../types';
 import toast from 'react-hot-toast';
 
 export default function RegisterPage() {
@@ -9,8 +11,17 @@ export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [organization, setOrganization] = useState('');
+  const [spaceId, setSpaceId] = useState('');
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(false);
   const [registered, setRegistered] = useState(false);
+
+  useEffect(() => {
+    spaceService.getAll()
+      .then((data) => setSpaces(data.filter((s) => s.isActive)))
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,9 +29,17 @@ export default function RegisterPage() {
       toast.error('La contraseña debe tener al menos 6 caracteres');
       return;
     }
+    if (!organization.trim()) {
+      toast.error('Debes ingresar tu agrupación u organización');
+      return;
+    }
+    if (!spaceId) {
+      toast.error('Debes seleccionar un espacio');
+      return;
+    }
     setLoading(true);
     try {
-      await register(name, email, password);
+      await register(name, email, password, spaceId, organization);
       setRegistered(true);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -105,6 +124,31 @@ export default function RegisterPage() {
               placeholder="Mínimo 6 caracteres"
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Agrupación u Organización</label>
+            <input
+              type="text"
+              value={organization}
+              onChange={(e) => setOrganization(e.target.value)}
+              required
+              placeholder="Ej: Taller Comunal Las Flores"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Espacio</label>
+            <select
+              value={spaceId}
+              onChange={(e) => setSpaceId(e.target.value)}
+              required
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            >
+              <option value="">Selecciona tu espacio...</option>
+              {spaces.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           </div>
           <button
             type="submit"

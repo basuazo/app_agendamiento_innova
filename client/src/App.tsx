@@ -20,6 +20,8 @@ const UsersPage          = lazy(() => import('./pages/admin/UsersPage'));
 const BookingsPage       = lazy(() => import('./pages/admin/BookingsPage'));
 const CertificationsPage = lazy(() => import('./pages/admin/CertificationsPage'));
 const SettingsPage       = lazy(() => import('./pages/admin/SettingsPage'));
+const CategoriesPage     = lazy(() => import('./pages/admin/CategoriesPage'));
+const SpacesPage         = lazy(() => import('./pages/superadmin/SpacesPage'));
 
 function PageLoader() {
   return (
@@ -113,6 +115,18 @@ export default function App() {
           <Route path="/admin/settings" element={
             <ProtectedRoute adminOnly>
               <Layout><SettingsPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/categories" element={
+            <ProtectedRoute adminOnly>
+              <Layout><CategoriesPage /></Layout>
+            </ProtectedRoute>
+          } />
+
+          {/* Rutas Super Admin */}
+          <Route path="/superadmin/spaces" element={
+            <ProtectedRoute superAdminOnly>
+              <Layout><SpacesPage /></Layout>
             </ProtectedRoute>
           } />
 

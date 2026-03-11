@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Resource, ResourceAvailability, ResourceCategory, Certification, User } from '../../types';
+import { Resource, ResourceAvailability, Category, Certification, User } from '../../types';
 import { useBookingStore } from '../../store/bookingStore';
 import { useResourceStore } from '../../store/resourceStore';
 import { useAuthStore } from '../../store/authStore';
 import { bookingService } from '../../services/booking.service';
 import { certificationService } from '../../services/certification.service';
 import { userService } from '../../services/user.service';
-import { PURPOSE_LABELS, RESOURCE_CATEGORY_LABELS, RESOURCE_CATEGORY_COLORS } from '../../utils/dateHelpers';
+import { PURPOSE_LABELS } from '../../utils/dateHelpers';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -18,7 +18,6 @@ interface Props {
 }
 
 const HOURS = Array.from({ length: 8 }, (_, i) => i + 9);
-const ALL_CATEGORIES = Object.keys(RESOURCE_CATEGORY_LABELS) as ResourceCategory[];
 
 export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource }: Props) {
   const { create } = useBookingStore();
@@ -33,7 +32,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
 
   // Step 1: category selection
   const [step, setStep] = useState<0 | 1 | 2>(isAdmin ? 0 : 1);
-  const [selectedCategory, setSelectedCategory] = useState<ResourceCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [certifications, setCertifications] = useState<Certification[]>([]);
 
   // Step 2: machine + booking details
@@ -79,7 +78,6 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       setSelectedCategory(preselectedResource.category);
       setResourceId(preselectedResource.id);
       if (!isAdmin) setStep(2);
-      // Admin keeps step=0 to select user first; after step 0 they go to step 2
     }
   }, [preselectedResource, isAdmin]);
 
@@ -138,7 +136,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     setStep(preselectedResource ? 2 : 1);
   };
 
-  const handleCategorySelect = (cat: ResourceCategory) => {
+  const handleCategorySelect = (cat: Category) => {
     setSelectedCategory(cat);
     setResourceId('');
     setQuantity(1);
@@ -159,12 +157,12 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       await create({
         resourceId,
         startTime: startTime.toISOString(),
-        purpose: selectedCategory === 'ESPACIO_REUNION' ? 'REUNION' : purpose,
+        purpose: selectedCategory?.slug === 'ESPACIO_REUNION' ? 'REUNION' : purpose,
         produceItem: purpose === 'PRODUCE' ? produceItem : undefined,
         produceQty: purpose === 'PRODUCE' ? produceQty : undefined,
-        quantity: selectedCategory === 'MESON_CORTE' ? quantity : 1,
+        quantity: selectedCategory?.slug === 'MESON_CORTE' ? quantity : 1,
         notes: notes || undefined,
-        isPrivate: selectedCategory === 'ESPACIO_REUNION' ? isPrivate : undefined,
+        isPrivate: selectedCategory?.slug === 'ESPACIO_REUNION' ? isPrivate : undefined,
         attendees: withCompanions ? 1 + companionCount : 1,
         companionRelation: withCompanions ? companionRelation : undefined,
         targetUserId: isAdmin && !bookingForSelf && targetUserId ? targetUserId : undefined,
@@ -172,10 +170,10 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       const selectedResource = categoryResources.find((r) => r.id === resourceId);
       const willBeConfirmed =
         isAdmin ||
-        (selectedCategory === 'ESPACIO_REUNION'
-          ? !isPrivate && certifications.some((c) => c.resourceCategory === selectedCategory)
+        (selectedCategory?.slug === 'ESPACIO_REUNION'
+          ? !isPrivate && certifications.some((c) => c.categoryId === selectedCategory?.id)
           : !selectedResource?.requiresCertification ||
-            certifications.some((c) => c.resourceCategory === selectedCategory));
+            certifications.some((c) => c.categoryId === selectedCategory?.id));
       toast.success(
         willBeConfirmed
           ? '¡Reserva confirmada!'
@@ -190,11 +188,15 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     }
   };
 
-  const isCertifiedFor = (cat: ResourceCategory) =>
-    isAdmin || certifications.some((c) => c.resourceCategory === cat);
+  const isCertifiedFor = (cat: Category) => {
+    const catResources = resources.filter((r) => r.isActive && r.categoryId === cat.id);
+    const requiresCert = catResources.some((r) => r.requiresCertification);
+    if (!requiresCert) return true;
+    return isAdmin || certifications.some((c) => c.categoryId === cat.id);
+  };
 
   const categoryResources = resources.filter(
-    (r) => r.isActive && r.category === selectedCategory
+    (r) => r.isActive && r.categoryId === selectedCategory?.id
   );
 
   const isResourceDisabled = (r: Resource) => {
@@ -217,7 +219,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
 
   const today = format(new Date(), 'yyyy-MM-dd');
   const notCertifiedWarning = selectedCategory
-    && selectedCategory !== 'ESPACIO_REUNION'
+    && selectedCategory.slug !== 'ESPACIO_REUNION'
     && !isCertifiedFor(selectedCategory);
 
   // ── Step 0: Admin user selection ─────────────────────────────────────────
@@ -307,9 +309,14 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
 
   // ── Step 1: Category grid ────────────────────────────────────────────────
   if (step === 1) {
-    const categoriesWithMachines = ALL_CATEGORIES.filter((cat) =>
-      resources.some((r) => r.isActive && r.category === cat)
-    );
+    // Derivar categorías únicas desde los recursos activos
+    const categoryMap = new Map<string, Category>();
+    for (const r of resources) {
+      if (r.isActive && !categoryMap.has(r.categoryId)) {
+        categoryMap.set(r.categoryId, r.category);
+      }
+    }
+    const availableCategories = Array.from(categoryMap.values()).sort((a, b) => a.order - b.order);
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -341,24 +348,23 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {categoriesWithMachines.map((cat) => {
+              {availableCategories.map((cat) => {
                 const certified = isCertifiedFor(cat);
-                const color = RESOURCE_CATEGORY_COLORS[cat];
                 return (
                   <button
-                    key={cat}
+                    key={cat.id}
                     onClick={() => handleCategorySelect(cat)}
                     className="relative p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] hover:shadow-md"
-                    style={{ borderColor: color + '60' }}
+                    style={{ borderColor: cat.color + '60' }}
                   >
                     <div
                       className="w-8 h-8 rounded-full mb-2"
-                      style={{ backgroundColor: color + '20' }}
+                      style={{ backgroundColor: cat.color + '20' }}
                     >
-                      <div className="w-3 h-3 rounded-full m-2.5" style={{ backgroundColor: color }} />
+                      <div className="w-3 h-3 rounded-full m-2.5" style={{ backgroundColor: cat.color }} />
                     </div>
                     <p className="text-sm font-semibold text-gray-800 leading-tight">
-                      {RESOURCE_CATEGORY_LABELS[cat]}
+                      {cat.name}
                     </p>
                     <p className="text-xs mt-1.5">
                       {certified ? (
@@ -406,9 +412,9 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                 <p className="text-sm text-gray-500 mt-0.5">
                   <span
                     className="inline-block w-2 h-2 rounded-full mr-1"
-                    style={{ backgroundColor: RESOURCE_CATEGORY_COLORS[selectedCategory] }}
+                    style={{ backgroundColor: selectedCategory.color }}
                   />
-                  {RESOURCE_CATEGORY_LABELS[selectedCategory]}
+                  {selectedCategory.name}
                 </p>
               )}
             </div>
@@ -484,7 +490,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
             </div>
 
             {/* Cantidad de mesones (solo para MESON_CORTE) */}
-            {selectedCategory === 'MESON_CORTE' && resourceId && (() => {
+            {selectedCategory?.slug === 'MESON_CORTE' && resourceId && (() => {
               const r = categoryResources.find((r) => r.id === resourceId);
               const av = availability?.[resourceId];
               const maxQty = av?.availableCapacity ?? r?.capacity ?? 4;
@@ -512,7 +518,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
             })()}
 
             {/* Tipo de uso para ESPACIO_REUNION / Propósito para el resto */}
-            {selectedCategory === 'ESPACIO_REUNION' ? (
+            {selectedCategory?.slug === 'ESPACIO_REUNION' ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de uso *</label>
                 <div className="grid grid-cols-2 gap-3 mb-2">
@@ -548,7 +554,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                     </p>
                   </div>
                 )}
-                {!isPrivate && !isCertifiedFor('ESPACIO_REUNION') && !isAdmin && (
+                {!isPrivate && selectedCategory && !isCertifiedFor(selectedCategory) && !isAdmin && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-1">
                     <p className="text-xs text-amber-800 font-medium">
                       ⚠️ Sin certificación en Espacio de Reuniones, tu reserva quedará pendiente de aprobación.

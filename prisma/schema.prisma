@@ -9,6 +9,7 @@ datasource db {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   USER
 }
@@ -34,20 +35,6 @@ enum CommentTag {
   CLEANING
 }
 
-enum ResourceCategory {
-  RECTA_CASERA
-  OVERLOCK_CASERA
-  COLLERETERA
-  BORDADORA
-  IMPRESORA_SUBLIMACION
-  PLOTTER_CORTE
-  PLANCHA_SUBLIMACION
-  INDUSTRIAL
-  PLANCHA_VAPOR
-  MESON_CORTE
-  ESPACIO_REUNION
-}
-
 enum CertReqStatus {
   PENDING
   SCHEDULED
@@ -61,16 +48,53 @@ enum CompanionRelation {
   OTRO
 }
 
+model Space {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  categories    Category[]
+  resources     Resource[]
+  trainings     Training[]
+  comments      Comment[]
+  businessHours BusinessHours[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   // "RECTA_CASERA" — usado para lógica de negocio interna
+  color     String   @default("#6b7280")
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  spaceId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  space                 Space                  @relation(fields: [spaceId], references: [id])
+  resources             Resource[]
+  certifications        Certification[]
+  certificationRequests CertificationRequest[]
+
+  @@unique([spaceId, slug])
+}
+
 model User {
   id               String    @id @default(cuid())
   name             String
   email            String    @unique
   password         String
+  organization     String?   // Agrupación u Organización a la que pertenece
   role             Role      @default(USER)
   isVerified       Boolean   @default(false)
+  spaceId          String?   // null para SUPER_ADMIN
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  space                 Space?                @relation(fields: [spaceId], references: [id])
   bookings              Booking[]
   comments              Comment[]
   trainingsCreated      Training[]            @relation("TrainingCreator")
@@ -81,17 +105,20 @@ model User {
 }
 
 model Resource {
-  id                    String           @id @default(cuid())
+  id                    String   @id @default(cuid())
   name                  String
   description           String?
-  category              ResourceCategory
-  requiresCertification Boolean          @default(true)
-  capacity              Int              @default(1)
+  categoryId            String
+  requiresCertification Boolean  @default(true)
+  capacity              Int      @default(1)
   imageUrl              String?
-  isActive              Boolean          @default(true)
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  isActive              Boolean  @default(true)
+  spaceId               String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
+  space              Space               @relation(fields: [spaceId], references: [id])
+  category           Category            @relation(fields: [categoryId], references: [id])
   bookings           Booking[]
   trainingExemptions TrainingExemption[]
 }
@@ -131,8 +158,10 @@ model Training {
   startTime   DateTime
   endTime     DateTime
   createdBy   String
+  spaceId     String
   createdAt   DateTime  @default(now())
 
+  space      Space               @relation(fields: [spaceId], references: [id])
   creator    User                @relation("TrainingCreator", fields: [createdBy], references: [id])
   exemptions TrainingExemption[]
 }
@@ -154,38 +183,42 @@ model Comment {
   content   String
   tag       CommentTag @default(GENERAL)
   imageUrl  String?
+  spaceId   String
   createdAt DateTime   @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  space Space @relation(fields: [spaceId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
 }
 
 model Certification {
-  id               String           @id @default(cuid())
-  userId           String
-  resourceCategory ResourceCategory
-  certifiedAt      DateTime         @default(now())
-  certifiedById    String
-  notes            String?
+  id            String   @id @default(cuid())
+  userId        String
+  categoryId    String
+  certifiedAt   DateTime @default(now())
+  certifiedById String
+  notes         String?
 
-  user      User @relation("UserCertifications", fields: [userId], references: [id])
-  certifier User @relation("CertifierCertifications", fields: [certifiedById], references: [id])
+  user      User     @relation("UserCertifications", fields: [userId], references: [id])
+  certifier User     @relation("CertifierCertifications", fields: [certifiedById], references: [id])
+  category  Category @relation(fields: [categoryId], references: [id])
 
-  @@unique([userId, resourceCategory])
+  @@unique([userId, categoryId])
 }
 
 model CertificationRequest {
-  id               String        @id @default(cuid())
-  userId           String
-  resourceCategory ResourceCategory
-  status           CertReqStatus @default(PENDING)
-  scheduledDate    DateTime?
-  notes            String?
-  resolvedAt       DateTime?
-  createdAt        DateTime      @default(now())
+  id            String        @id @default(cuid())
+  userId        String
+  categoryId    String
+  status        CertReqStatus @default(PENDING)
+  scheduledDate DateTime?
+  notes         String?
+  resolvedAt    DateTime?
+  createdAt     DateTime      @default(now())
 
-  user User @relation("UserCertRequests", fields: [userId], references: [id])
+  user     User     @relation("UserCertRequests", fields: [userId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
 
-  @@unique([userId, resourceCategory])
+  @@unique([userId, categoryId])
   @@index([userId])
   @@index([status])
 }
@@ -201,6 +234,9 @@ enum AuditAction {
   CERT_REQUEST_APPROVED
   CERT_REQUEST_REJECTED
   CERTIFICATION_REVOKED
+  SPACE_CREATED
+  SPACE_UPDATED
+  SPACE_DELETED
 }
 
 model AuditLog {
@@ -221,11 +257,14 @@ model AuditLog {
 
 model BusinessHours {
   id        String   @id @default(cuid())
+  spaceId   String
   dayOfWeek Int      // 0=Domingo, 1=Lunes, ..., 6=Sábado
   isOpen    Boolean  @default(true)
   openTime  String   // "09:00"
   closeTime String   // "17:00"
   updatedAt DateTime @updatedAt
 
-  @@unique([dayOfWeek])
+  space Space @relation(fields: [spaceId], references: [id])
+
+  @@unique([spaceId, dayOfWeek])
 }

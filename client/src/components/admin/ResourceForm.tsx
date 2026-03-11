@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Resource, ResourceCategory } from '../../types';
+import { Resource, Category } from '../../types';
 import { useResourceStore } from '../../store/resourceStore';
-import { RESOURCE_CATEGORY_LABELS } from '../../utils/dateHelpers';
+import { categoryService } from '../../services/category.service';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -9,38 +9,47 @@ interface Props {
   onClose: () => void;
 }
 
-const ALL_CATEGORIES = Object.entries(RESOURCE_CATEGORY_LABELS) as [ResourceCategory, string][];
-
 export default function ResourceForm({ resource, onClose }: Props) {
   const { create, update } = useResourceStore();
   const [name, setName] = useState(resource?.name ?? '');
   const [description, setDescription] = useState(resource?.description ?? '');
-  const [category, setCategory] = useState<ResourceCategory>(resource?.category ?? 'RECTA_CASERA');
+  const [categoryId, setCategoryId] = useState(resource?.categoryId ?? '');
   const [requiresCertification, setRequiresCertification] = useState(resource?.requiresCertification ?? true);
   const [imageUrl, setImageUrl] = useState(resource?.imageUrl ?? '');
   const [capacity, setCapacity] = useState(resource?.capacity ?? 1);
   const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    categoryService.getAll().then(setCategories).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (resource) {
       setName(resource.name);
       setDescription(resource.description ?? '');
-      setCategory(resource.category);
+      setCategoryId(resource.categoryId);
       setRequiresCertification(resource.requiresCertification);
       setImageUrl(resource.imageUrl ?? '');
       setCapacity(resource.capacity ?? 1);
     }
   }, [resource]);
 
+  useEffect(() => {
+    if (!resource && categories.length > 0 && !categoryId) {
+      setCategoryId(categories[0].id);
+    }
+  }, [categories, resource, categoryId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (resource) {
-        await update(resource.id, { name, description, category, requiresCertification, imageUrl, capacity });
+        await update(resource.id, { name, description, categoryId, requiresCertification, imageUrl, capacity });
         toast.success('Recurso actualizado');
       } else {
-        await create({ name, description, category, requiresCertification, imageUrl, capacity });
+        await create({ name, description, categoryId, requiresCertification, imageUrl, capacity });
         toast.success('Recurso creado');
       }
       onClose();
@@ -72,12 +81,14 @@ export default function ResourceForm({ resource, onClose }: Props) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as ResourceCategory)}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                required
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
-                {ALL_CATEGORIES.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                {categories.length === 0 && <option value="">Cargando categorías...</option>}
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
             </div>
@@ -135,7 +146,7 @@ export default function ResourceForm({ resource, onClose }: Props) {
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !categoryId}
                 className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-60"
               >
                 {loading ? 'Guardando...' : 'Guardar'}

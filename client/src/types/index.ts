@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'USER';
+export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'USER';
 export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED';
 export type BookingPurpose = 'LEARN' | 'PRODUCE' | 'DESIGN' | 'REUNION';
 export type CommentTag = 'GENERAL' | 'MACHINE_ISSUE' | 'ORDER' | 'CLEANING';
@@ -6,24 +6,32 @@ export type CompanionRelation = 'CUIDADOS' | 'AMISTAD' | 'OTRO';
 export type ResourceAvailabilityStatus = 'available' | 'booked' | 'blocked';
 export type CertReqStatus = 'PENDING' | 'SCHEDULED' | 'APPROVED' | 'REJECTED';
 
-export type ResourceCategory =
-  | 'RECTA_CASERA'
-  | 'OVERLOCK_CASERA'
-  | 'COLLERETERA'
-  | 'BORDADORA'
-  | 'IMPRESORA_SUBLIMACION'
-  | 'PLOTTER_CORTE'
-  | 'PLANCHA_SUBLIMACION'
-  | 'INDUSTRIAL'
-  | 'PLANCHA_VAPOR'
-  | 'MESON_CORTE'
-  | 'ESPACIO_REUNION';
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;   // e.g. "RECTA_CASERA" — usado para lógica de negocio
+  color: string;  // hex color
+  isActive: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Space {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface User {
   id: string;
   name: string;
   email: string;
+  organization?: string | null;
   role: Role;
+  spaceId?: string | null;
   isVerified?: boolean;
   createdAt: string;
 }
@@ -32,7 +40,8 @@ export interface Resource {
   id: string;
   name: string;
   description?: string;
-  category: ResourceCategory;
+  categoryId: string;
+  category: Category;
   requiresCertification: boolean;
   capacity: number;
   imageUrl?: string;
@@ -58,7 +67,7 @@ export interface Booking {
   googleCalendarEventId?: string;
   createdAt: string;
   user: { id: string; name: string; email: string };
-  resource: { id: string; name: string; category: ResourceCategory };
+  resource: { id: string; name: string; category: Category };
 }
 
 export interface Comment {
@@ -104,7 +113,8 @@ export interface Training {
 export interface Certification {
   id: string;
   userId: string;
-  resourceCategory: ResourceCategory;
+  categoryId: string;
+  category: Category;
   certifiedAt: string;
   certifiedById: string;
   notes?: string;
@@ -115,7 +125,8 @@ export interface Certification {
 export interface CertificationRequest {
   id: string;
   userId: string;
-  resourceCategory: ResourceCategory;
+  categoryId: string;
+  category: Category;
   status: CertReqStatus;
   scheduledDate?: string;
   notes?: string;

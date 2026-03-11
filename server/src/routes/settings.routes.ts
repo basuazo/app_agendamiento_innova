@@ -5,7 +5,7 @@ import { requireAdmin } from '../middleware/role.middleware';
 
 const router = Router();
 
-router.get('/settings/business-hours', getBusinessHours);
+router.get('/settings/business-hours', authenticate, getBusinessHours);
 router.put('/settings/business-hours', authenticate, requireAdmin, updateBusinessHours);
 
 export default router;

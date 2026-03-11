@@ -1,5 +1,5 @@
 import api from './api';
-import { Certification, CertificationRequest, ResourceCategory } from '../types';
+import { Certification, CertificationRequest } from '../types';
 
 export const certificationService = {
   getMyCertifications: () =>
@@ -8,8 +8,8 @@ export const certificationService = {
   getMyRequests: () =>
     api.get<CertificationRequest[]>('/certifications/my-requests').then((r) => r.data),
 
-  requestCertification: (resourceCategory: ResourceCategory) =>
-    api.post<CertificationRequest>('/certifications/request', { resourceCategory }).then((r) => r.data),
+  requestCertification: (categoryId: string) =>
+    api.post<CertificationRequest>('/certifications/request', { categoryId }).then((r) => r.data),
 
   cancelMyRequest: (id: string) =>
     api.delete(`/certifications/my-requests/${id}`).then((r) => r.data),

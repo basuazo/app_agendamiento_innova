@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
 
 const TRAINING_INCLUDE = {
@@ -12,7 +12,9 @@ const TRAINING_INCLUDE = {
 
 export const getTrainings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const spaceId = resolveSpaceId(req);
     const trainings = await prisma.training.findMany({
+      where: spaceId ? { spaceId } : {},
       include: TRAINING_INCLUDE,
       orderBy: { startTime: 'asc' },
     });
@@ -39,6 +41,12 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) {
+      res.status(400).json({ error: 'Se requiere contexto de espacio' });
+      return;
+    }
+
     const training = await prisma.$transaction(async (tx) => {
       const created = await tx.training.create({
         data: {
@@ -47,6 +55,7 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
           startTime,
           endTime,
           createdBy: req.user!.id,
+          spaceId,
         },
       });
 

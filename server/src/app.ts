@@ -16,6 +16,8 @@ import commentRoutes from './routes/comment.routes';
 import trainingRoutes from './routes/training.routes';
 import certificationRoutes from './routes/certification.routes';
 import settingsRoutes from './routes/settings.routes';
+import spaceRoutes from './routes/space.routes';
+import categoryRoutes from './routes/category.routes';
 
 // ── Validación de variables de entorno críticas ───────────────────────────────
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
@@ -85,6 +87,8 @@ app.get('/api/health', async (_req: Request, res: Response) => {
 
 // ── Rutas API ─────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/spaces', spaceRoutes);
+app.use('/api/categories', categoryRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', userRoutes);

@@ -1,21 +1,41 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { spaceService } from '../../services/space.service';
+import type { Space } from '../../types';
 
 export default function Navbar() {
-  const { user, logout } = useAuthStore();
+  const { user, logout, currentSpaceId, setCurrentSpace } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [adminOpen, setAdminOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spaceOpen, setSpaceOpen] = useState(false);
   const adminRef = useRef<HTMLDivElement>(null);
+  const spaceRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (user?.role === 'SUPER_ADMIN') {
+      spaceService.getAll().then((data) => {
+        setSpaces(data);
+        // Auto-seleccionar el primer espacio si no hay ninguno seleccionado
+        if (!currentSpaceId && data.length > 0) {
+          setCurrentSpace(data[0].id);
+        }
+      }).catch(() => {});
+    }
+  }, [user?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cerrar el menú al hacer click fuera
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (adminRef.current && !adminRef.current.contains(e.target as Node)) {
         setAdminOpen(false);
+      }
+      if (spaceRef.current && !spaceRef.current.contains(e.target as Node)) {
+        setSpaceOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -27,7 +47,10 @@ export default function Navbar() {
     setAdminOpen(false);
     setMobileMenuOpen(false);
     setMobileAdminOpen(false);
+    setSpaceOpen(false);
   }, [location.pathname]);
+
+  const currentSpace = spaces.find((s) => s.id === currentSpaceId);
 
   const handleLogout = () => {
     logout();
@@ -86,8 +109,49 @@ export default function Navbar() {
               Certificaciones
             </Link>
 
+            {/* Selector de espacio — solo SUPER_ADMIN */}
+            {user?.role === 'SUPER_ADMIN' && (
+              <div className="relative" ref={spaceRef}>
+                <button
+                  onClick={() => setSpaceOpen((prev) => !prev)}
+                  className="text-sm flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors font-medium"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {currentSpace?.name ?? 'Todos los espacios'}
+                  <svg className={`w-3.5 h-3.5 transition-transform ${spaceOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {spaceOpen && spaces.length > 0 && (
+                  <div className="absolute left-0 top-full mt-2 w-52 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                    {spaces.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => { setCurrentSpace(s.id); setSpaceOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${currentSpaceId === s.id ? 'text-purple-700 font-semibold bg-purple-50' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Menú Super Admin */}
+            {user?.role === 'SUPER_ADMIN' && (
+              <Link
+                to="/superadmin/spaces"
+                className={`text-sm transition-colors ${isActive('/superadmin/spaces')}`}
+              >
+                Espacios
+              </Link>
+            )}
+
             {/* Menú Admin — controlado por estado */}
-            {user?.role === 'ADMIN' && (
+            {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
               <div className="relative" ref={adminRef}>
                 <button
                   onClick={() => setAdminOpen((prev) => !prev)}
@@ -110,6 +174,15 @@ export default function Navbar() {
 
                 {adminOpen && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50">
+                    <Link
+                      to="/admin/categories"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      Categorías
+                    </Link>
                     <Link
                       to="/admin/resources"
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -165,7 +238,9 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             <Link to="/profile" className="text-right group">
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
-              <p className="text-xs text-gray-500">{user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}</p>
+              <p className="text-xs text-gray-500">
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}
+              </p>
             </Link>
             <button
               onClick={handleLogout}
@@ -220,7 +295,7 @@ export default function Navbar() {
               Certificaciones
             </Link>
 
-            {user?.role === 'ADMIN' && (
+            {(user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') && (
               <div>
                 <button
                   onClick={() => setMobileAdminOpen((prev) => !prev)}
@@ -238,6 +313,9 @@ export default function Navbar() {
                 </button>
                 {mobileAdminOpen && (
                   <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
+                    <Link to="/admin/categories" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                      Categorías
+                    </Link>
                     <Link to="/admin/resources" className="block px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                       Recursos
                     </Link>
@@ -262,7 +340,9 @@ export default function Navbar() {
           <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
             <Link to="/profile" className="group" onClick={() => setMobileMenuOpen(false)}>
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
-              <p className="text-xs text-gray-500">{user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}</p>
+              <p className="text-xs text-gray-500">
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : 'Usuario'}
+              </p>
             </Link>
             <button
               onClick={handleLogout}
