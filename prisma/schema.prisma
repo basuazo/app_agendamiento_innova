@@ -51,11 +51,13 @@ enum CompanionRelation {
 }
 
 model Space {
-  id        String   @id @default(cuid())
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  isActive            Boolean  @default(true)
+  maxCapacity         Int      @default(12)
+  maxCapacityReunion  Int      @default(12)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   users         User[]
   categories    Category[]

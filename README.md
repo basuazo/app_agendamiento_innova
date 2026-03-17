@@ -122,7 +122,7 @@ npm run dev
 | Agendar por otra usuaria | ✓ | ✓ | ✓ |
 | Ver y verificar usuarios | ✓ | — | ✓ |
 | Crear/editar/eliminar usuarios | ✓ | — | — |
-| Configurar horarios | ✓ | — | — |
+| Configurar horarios y aforo | ✓ | — | — |
 
 El registro de nuevos usuarios queda en estado **pendiente** hasta que un admin o Líder Comunitaria lo verifique.
 
@@ -145,12 +145,13 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Calendario de reservas**: vista semanal. Click en celda para reservar, click en slot ocupado para ver detalle o crear nueva reserva encima. Horario configurable por espacio (BusinessHours). Tiempo libre de hasta 4 horas por reserva.
 - **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
 - **Capacitaciones**: el admin/Líder Técnica bloquea rangos horarios de recursos para sesiones de capacitación.
-- **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina, sin pregunta de acompañantes.
+- **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina ni pregunta de acompañantes. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual para identificar personas externas a la agrupación.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
 - **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
 - **Roles jerárquicos**: cinco roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA, USER).
 - **Agendar por otra usuaria**: todos los roles elevados (ADMIN, SUPER_ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA) pueden crear reservas a nombre de cualquier usuaria del espacio. El BookingModal muestra un paso previo de selección de usuaria cuando el actor tiene un rol elevado.
 - **Exportación a Excel**: desde la página Todas las Reservas, ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA pueden descargar un archivo `.xlsx` con el detalle completo de las reservas del espacio activo (fecha, horario, recurso, categoría, usuaria, propósito, ítem a producir, cantidad, asistentes, relación de acompañantes, estado y notas).
+- **Aforo configurable**: cada espacio tiene dos límites de personas editables desde la página de Configuración — uno para uso de máquinas (suma de asistentes concurrentes) y otro para la sala de reuniones (límite por reserva). El sistema bloquea reservas que superen el aforo configurado.
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
 ---

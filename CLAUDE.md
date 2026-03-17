@@ -229,7 +229,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 
 | Modelo | Descripcion |
 |--------|------------|
-| `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios |
+| `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios. Tiene `maxCapacity` (aforo maquinas) y `maxCapacityReunion` (aforo sala) |
 | `Category` | Categoria de maquina dinamica, pertenece a un Space (reemplaza enum ResourceCategory) |
 | `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, y spaceId (null para SUPER_ADMIN) |
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
@@ -385,7 +385,8 @@ GET      /api/health               <- health check con DB
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
 - Maximo 10 usuarias por sesion de certificacion
 - Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
-- `ESPACIO_REUNION` (slug): auto-selecciona el recurso, oculta selector de maquina y pregunta de acompanante
+- `ESPACIO_REUNION` (slug): auto-selecciona el recurso, oculta selector de maquina y pregunta de acompanante. Muestra campo de N° asistentes (→ `attendees`) y notas con label/placeholder contextual para identificar personas externas a la agrupacion
+- **Aforo**: `Space.maxCapacity` limita asistentes totales en reservas de maquinas; `Space.maxCapacityReunion` limita asistentes por reserva de sala. Valores configurables desde SettingsPage. El check en booking.controller distingue slug `ESPACIO_REUNION` vs. el resto. No aplica a ADMIN/SUPER_ADMIN
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
 - No usar mapas estaticos de colores/labels en frontend — usar `r.category?.color` y `r.category?.name`
 
@@ -463,6 +464,22 @@ GET      /api/health               <- health check con DB
 - `GET/PUT /api/settings/business-hours`
 - SettingsPage en admin para configurar horario por dia
 - Al crear un espacio nuevo se generan BusinessHours por defecto (lun-sab 09:00-17:00)
+
+### Feature: Aforo configurable por espacio
+- Campos `maxCapacity Int @default(12)` y `maxCapacityReunion Int @default(12)` en modelo `Space`
+- Migracion: `20260317182326_add_space_capacity`
+- `GET /api/settings/business-hours` ahora retorna `{ days, maxCapacity, maxCapacityReunion }` (antes era solo el array)
+- `PUT /api/settings/business-hours` acepta `{ days, maxCapacity, maxCapacityReunion }` y actualiza el Space
+- Frontend: tipo `SpaceSettings` en `types/index.ts`; `settingsService` actualizado; `CalendarPage` usa `data.days`
+- SettingsPage: seccion "Aforo maximo" con dos inputs separados antes de la tabla de horarios
+- Inputs de aforo usan estado `string` (no `number`) para permitir borrar y reeditar; validacion solo al guardar
+- booking.controller: reemplaza `> 12` hardcodeado — lee `space.maxCapacity` / `space.maxCapacityReunion`; maquinas verifican suma de asistentes en el horario, sala verifica solo la reserva puntual
+
+### Feature: Sala de reuniones — asistentes y notas
+- BookingModal agrega campo **N° de asistentes** para `ESPACIO_REUNION` (estado `reunionAttendees`, default 2)
+- Se envia como `attendees` en el body; el backend lo valida contra `space.maxCapacityReunion`
+- El campo Notas cambia label/placeholder en modo ESPACIO_REUNION: pide identificar personas externas a la agrupacion
+- Para el resto de categorias, label y placeholder de notas no cambian
 
 ### Feature: Auditoria
 - `AuditLog` model en BD

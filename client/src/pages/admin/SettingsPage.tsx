@@ -25,6 +25,8 @@ const DEFAULT_HOURS: DayState[] = Array.from({ length: 7 }, (_, i) => ({
 export default function SettingsPage() {
   const { currentSpaceId, user } = useAuthStore();
   const [days, setDays] = useState<DayState[]>(DEFAULT_HOURS);
+  const [maxCapacity, setMaxCapacity] = useState<string>('12');
+  const [maxCapacityReunion, setMaxCapacityReunion] = useState<string>('12');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -36,15 +38,17 @@ export default function SettingsPage() {
     }
     setIsLoading(true);
     settingsService.getBusinessHours().then((data) => {
-      if (data.length === 7) {
+      if (data.days.length === 7) {
         setDays(
-          data
+          data.days
             .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
             .map(({ dayOfWeek, isOpen, openTime, closeTime }) => ({
               dayOfWeek, isOpen, openTime, closeTime,
             }))
         );
       }
+      setMaxCapacity(String(data.maxCapacity));
+      setMaxCapacityReunion(String(data.maxCapacityReunion));
     }).catch(() => {
       toast.error('Error al cargar horarios');
     }).finally(() => {
@@ -59,12 +63,18 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
+    const parsedCapacity = parseInt(maxCapacity, 10);
+    const parsedReunion = parseInt(maxCapacityReunion, 10);
+    if (!parsedCapacity || parsedCapacity < 1 || !parsedReunion || parsedReunion < 1) {
+      toast.error('El aforo debe ser un número mayor a 0');
+      return;
+    }
     setIsSaving(true);
     try {
-      await settingsService.updateBusinessHours(days);
-      toast.success('Horarios guardados correctamente');
+      await settingsService.updateBusinessHours(days, parsedCapacity, parsedReunion);
+      toast.success('Configuración guardada correctamente');
     } catch {
-      toast.error('Error al guardar horarios');
+      toast.error('Error al guardar configuración');
     } finally {
       setIsSaving(false);
     }
@@ -76,7 +86,7 @@ export default function SettingsPage() {
     return (
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="text-center py-16 text-gray-400 text-sm">
-          Selecciona un espacio en el menú superior para ver sus horarios
+          Selecciona un espacio en el menú superior para ver su configuración
         </div>
       </div>
     );
@@ -85,12 +95,56 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Configuración de Horarios</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Configuración del Espacio</h1>
         <p className="text-gray-500 text-sm mt-0.5">
-          Define qué días están abiertos y en qué horario se pueden realizar reservas.
+          Define aforo máximo y los horarios de operación del espacio.
         </p>
       </div>
 
+      {/* Aforo */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-1">Aforo máximo</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Límite de personas que pueden usar el espacio al mismo tiempo. Se aplica al crear reservas.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Máquinas y talleres
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={maxCapacity}
+              onChange={(e) => setMaxCapacity(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Total de personas usando máquinas en el mismo horario
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sala de reuniones
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={maxCapacityReunion}
+              onChange={(e) => setMaxCapacityReunion(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Máximo de personas por reserva de sala de reuniones
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Horarios */}
+      <h2 className="text-base font-semibold text-gray-800 mb-3">Horarios de operación</h2>
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm divide-y divide-gray-50">
         {days.map((day) => (
           <div key={day.dayOfWeek} className="px-5 py-4">
@@ -164,7 +218,7 @@ export default function SettingsPage() {
               Guardando...
             </>
           ) : (
-            'Guardar horarios'
+            'Guardar configuración'
           )}
         </button>
       </div>

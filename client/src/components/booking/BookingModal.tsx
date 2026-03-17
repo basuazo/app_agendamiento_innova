@@ -49,6 +49,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
   const [withCompanions, setWithCompanions] = useState(false);
   const [companionCount, setCompanionCount] = useState(1);
   const [companionRelation, setCompanionRelation] = useState<'CUIDADOS' | 'AMISTAD' | 'OTRO'>('AMISTAD');
+  const [reunionAttendees, setReunionAttendees] = useState(2);
   const [loading, setLoading] = useState(false);
   const [availability, setAvailability] = useState<ResourceAvailability | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -123,6 +124,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     setWithCompanions(false);
     setCompanionCount(1);
     setCompanionRelation('AMISTAD');
+    setReunionAttendees(2);
     setAvailability(null);
     setBookingForSelf(true);
     setTargetUserId('');
@@ -190,7 +192,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
         quantity: selectedCategory?.slug === 'MESON_CORTE' ? quantity : 1,
         notes: notes || undefined,
         isPrivate: selectedCategory?.slug === 'ESPACIO_REUNION' ? isPrivate : undefined,
-        attendees: selectedCategory?.slug !== 'ESPACIO_REUNION' && withCompanions ? 1 + companionCount : undefined,
+        attendees: selectedCategory?.slug === 'ESPACIO_REUNION' ? reunionAttendees : (withCompanions ? 1 + companionCount : undefined),
         companionRelation: selectedCategory?.slug !== 'ESPACIO_REUNION' && withCompanions ? companionRelation : undefined,
         targetUserId: isAdmin && !bookingForSelf && targetUserId ? targetUserId : undefined,
       });
@@ -637,6 +639,24 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
               </div>
             )}
 
+            {/* N° de asistentes — solo para Espacio de Reuniones */}
+            {selectedCategory?.slug === 'ESPACIO_REUNION' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ¿Cuántas personas asistirán a la reunión? *
+                </label>
+                <input
+                  type="number"
+                  value={reunionAttendees}
+                  onChange={(e) => setReunionAttendees(Math.max(1, Number(e.target.value)))}
+                  min={1}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Inclúyete a ti misma en el total</p>
+              </div>
+            )}
+
             {/* Campos PRODUCE */}
             {purpose === 'PRODUCE' && (
               <div className="bg-orange-50 rounded-lg p-4 space-y-3">
@@ -745,12 +765,20 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
 
             {/* Notas */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notas (opcional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {selectedCategory?.slug === 'ESPACIO_REUNION'
+                  ? 'Personas externas a tu agrupación (opcional)'
+                  : 'Notas (opcional)'}
+              </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="Información adicional..."
+                placeholder={
+                  selectedCategory?.slug === 'ESPACIO_REUNION'
+                    ? 'Indica nombre y organización de quienes asisten y no pertenecen a tu agrupación...'
+                    : 'Información adicional...'
+                }
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
               />
             </div>

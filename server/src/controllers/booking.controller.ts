@@ -269,23 +269,43 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
     // Validar asistentes
     const attendees = Math.max(1, Number(attendeesRaw) || 1);
 
-    // Límite de ocupación: máximo 12 personas por bloque horario (no aplica a ADMIN/SUPER_ADMIN)
+    // Límite de ocupación según aforo del espacio (no aplica a ADMIN/SUPER_ADMIN)
     if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role)) {
-      const occupancy = await prisma.booking.aggregate({
-        _sum: { attendees: true },
-        where: {
-          status: 'CONFIRMED',
-          startTime: { lt: endTime },
-          endTime: { gt: startTime },
-        },
+      const space = await prisma.space.findUnique({
+        where: { id: resource.spaceId },
+        select: { maxCapacity: true, maxCapacityReunion: true },
       });
-      const currentTotal = occupancy._sum.attendees ?? 0;
-      if (currentTotal + attendees > 12) {
-        const available = Math.max(0, 12 - currentTotal);
-        res.status(409).json({
-          error: `El espacio ya tiene ${currentTotal} persona(s) en ese horario. Solo quedan ${available} lugar(es) disponibles (máximo 12).`,
+      const isReunion = resource.category.slug === 'ESPACIO_REUNION';
+
+      if (isReunion) {
+        // Aforo de sala de reuniones: la reserva en sí no puede superar el límite
+        const maxReunion = space?.maxCapacityReunion ?? 12;
+        if (attendees > maxReunion) {
+          res.status(409).json({
+            error: `El aforo de la sala de reuniones es de ${maxReunion} persona(s). Has indicado ${attendees}.`,
+          });
+          return;
+        }
+      } else {
+        // Aforo general: suma de asistentes en reservas no-reunión confirmadas en el mismo horario
+        const occupancy = await prisma.booking.aggregate({
+          _sum: { attendees: true },
+          where: {
+            status: 'CONFIRMED',
+            startTime: { lt: endTime },
+            endTime: { gt: startTime },
+            resource: { spaceId: resource.spaceId, category: { slug: { not: 'ESPACIO_REUNION' } } },
+          },
         });
-        return;
+        const maxGeneral = space?.maxCapacity ?? 12;
+        const currentTotal = occupancy._sum.attendees ?? 0;
+        if (currentTotal + attendees > maxGeneral) {
+          const available = Math.max(0, maxGeneral - currentTotal);
+          res.status(409).json({
+            error: `El espacio ya tiene ${currentTotal} persona(s) en ese horario. Solo quedan ${available} lugar(es) disponibles (aforo máximo: ${maxGeneral}).`,
+          });
+          return;
+        }
       }
     }
 

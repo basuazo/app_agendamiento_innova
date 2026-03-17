@@ -9,11 +9,15 @@ export const getBusinessHours = async (req: AuthRequest, res: Response): Promise
       res.status(400).json({ error: 'Se requiere contexto de espacio' });
       return;
     }
-    const hours = await prisma.businessHours.findMany({
-      where: { spaceId },
-      orderBy: { dayOfWeek: 'asc' },
+    const [hours, space] = await Promise.all([
+      prisma.businessHours.findMany({ where: { spaceId }, orderBy: { dayOfWeek: 'asc' } }),
+      prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true } }),
+    ]);
+    res.json({
+      days: hours,
+      maxCapacity: space?.maxCapacity ?? 12,
+      maxCapacityReunion: space?.maxCapacityReunion ?? 12,
     });
-    res.json(hours);
   } catch {
     res.status(500).json({ error: 'Error al obtener horarios' });
   }
@@ -27,7 +31,11 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const days: { dayOfWeek: number; isOpen: boolean; openTime: string; closeTime: string }[] = req.body;
+    const { days, maxCapacity, maxCapacityReunion } = req.body as {
+      days: { dayOfWeek: number; isOpen: boolean; openTime: string; closeTime: string }[];
+      maxCapacity?: number;
+      maxCapacityReunion?: number;
+    };
 
     if (!Array.isArray(days) || days.length !== 7) {
       res.status(400).json({ error: 'Se requieren exactamente 7 días' });
@@ -46,23 +54,30 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       }
     }
 
-    const updated = await Promise.all(
-      days.map((d) =>
-        prisma.businessHours.upsert({
-          where: { spaceId_dayOfWeek: { spaceId, dayOfWeek: d.dayOfWeek } },
-          update: { isOpen: d.isOpen, openTime: d.openTime, closeTime: d.closeTime },
-          create: {
-            spaceId,
-            dayOfWeek: d.dayOfWeek,
-            isOpen: d.isOpen,
-            openTime: d.openTime,
-            closeTime: d.closeTime,
-          },
-        })
-      )
-    );
+    const spaceUpdate: { maxCapacity?: number; maxCapacityReunion?: number } = {};
+    if (typeof maxCapacity === 'number' && maxCapacity >= 1) spaceUpdate.maxCapacity = maxCapacity;
+    if (typeof maxCapacityReunion === 'number' && maxCapacityReunion >= 1) spaceUpdate.maxCapacityReunion = maxCapacityReunion;
 
-    res.json(updated.sort((a, b) => a.dayOfWeek - b.dayOfWeek));
+    const [updatedDays, space] = await Promise.all([
+      Promise.all(
+        days.map((d) =>
+          prisma.businessHours.upsert({
+            where: { spaceId_dayOfWeek: { spaceId, dayOfWeek: d.dayOfWeek } },
+            update: { isOpen: d.isOpen, openTime: d.openTime, closeTime: d.closeTime },
+            create: { spaceId, dayOfWeek: d.dayOfWeek, isOpen: d.isOpen, openTime: d.openTime, closeTime: d.closeTime },
+          })
+        )
+      ),
+      Object.keys(spaceUpdate).length > 0
+        ? prisma.space.update({ where: { id: spaceId }, data: spaceUpdate, select: { maxCapacity: true, maxCapacityReunion: true } })
+        : prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true } }),
+    ]);
+
+    res.json({
+      days: updatedDays.sort((a, b) => a.dayOfWeek - b.dayOfWeek),
+      maxCapacity: space?.maxCapacity ?? 12,
+      maxCapacityReunion: space?.maxCapacityReunion ?? 12,
+    });
   } catch {
     res.status(500).json({ error: 'Error al actualizar horarios' });
   }

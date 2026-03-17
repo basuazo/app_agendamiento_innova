@@ -51,7 +51,7 @@ export default function CalendarPage() {
   const fetchBusinessHours = async () => {
     try {
       const data = await settingsService.getBusinessHours();
-      setBusinessHours(data);
+      setBusinessHours(data.days);
     } catch {
       // silent — el calendario usará horarios por defecto
     } finally {

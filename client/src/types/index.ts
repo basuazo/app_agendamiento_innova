@@ -143,3 +143,9 @@ export interface BusinessHours {
   closeTime: string; // "17:00"
   updatedAt: string;
 }
+
+export interface SpaceSettings {
+  days: BusinessHours[];
+  maxCapacity: number;        // aforo general (máquinas)
+  maxCapacityReunion: number; // aforo sala de reuniones
+}
