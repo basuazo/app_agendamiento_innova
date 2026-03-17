@@ -346,6 +346,7 @@ DELETE /api/resources/:id          <- eliminar recurso (todos los roles elevados
 
 GET    /api/bookings               <- reservas del usuario autenticado
 GET    /api/bookings/admin/all     <- todas las reservas (admin + lider_comunitaria)
+GET    /api/bookings/export        <- exportar Excel con todas las reservas (admin + lider_comunitaria)
 POST   /api/bookings               <- crear reserva (cualquier auth; targetUserId solo roles elevados)
 PATCH  /api/bookings/:id/approve   <- aprobar (admin + lider_comunitaria)
 PATCH  /api/bookings/:id/reject    <- rechazar (admin + lider_comunitaria)
@@ -432,12 +433,30 @@ GET      /api/health               <- health check con DB
 - Solo SUPER_ADMIN puede reasignar el espacio de un usuario (`spaceId`)
 - Backend hashea la nueva contrasena con bcrypt
 
-### Feature: Admin agenda por usuaria
-- BookingModal Step 0 (solo admin): "Para mi / Para otra usuaria"
-- Carga lista de usuarios al abrir el modal
+### Feature: Roles elevados agendan por otra usuaria
+- BookingModal Step 0 (solo roles elevados): "Para mi / Para otra usuaria"
+- Aplica a ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA (`isAdmin` en BookingModal)
+- Carga lista de usuarios del espacio al abrir el modal
 - `targetUserId?` en `CreateBookingDto`
-- Booking controller usa `targetUserId` si admin lo envia
+- Booking controller usa `targetUserId` si el actor es un rol elevado
 - Modal muestra nombre de la usuaria seleccionada en steps siguientes
+
+### Feature: Exportacion a Excel de reservas
+- Boton "Exportar Excel" en BookingsPage (admin + lider_comunitaria)
+- Ruta: `GET /api/bookings/export` — protegida con `authenticate` + `requireComunitaria`
+- Genera archivo `reservas.xlsx` filtrado por el espacio activo
+- Libreria: `xlsx` (SheetJS) en el backend
+- Columnas incluidas en la planilla:
+  - Fecha, Hora Inicio, Hora Fin
+  - Recurso, Categoria
+  - Usuario, Email Usuario
+  - Proposito
+  - Item a Producir, Cantidad (campos de proposito PRODUCE)
+  - N° Asistentes, Relacion Acompanantes
+  - Estado
+  - Notas
+  - Fecha de Reserva (createdAt)
+- El frontend descarga el blob como archivo directamente (sin URL publica)
 
 ### Feature: Horario de negocio configurable
 - Modelo `BusinessHours` (spaceId, dayOfWeek, isOpen, openTime, closeTime)
