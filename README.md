@@ -144,7 +144,7 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 
 - **Calendario de reservas**: vista semanal. Click en celda para reservar, click en slot ocupado para ver detalle o crear nueva reserva encima. Horario configurable por espacio (BusinessHours). Tiempo libre de hasta 4 horas por reserva.
 - **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
-- **Capacitaciones**: el admin/Líder Técnica bloquea rangos horarios de recursos para sesiones de capacitación.
+- **Capacitaciones**: el admin/Líder Técnica crea sesiones de capacitación con cupos configurables. Las usuarias se inscriben directamente desde `/my-trainings` o desde el calendario; si los cupos están llenos, quedan en lista de espera y se promocionan automáticamente al liberarse un cupo. La página `/admin/trainings` muestra el listado completo con las inscritas y su estado (Confirmada / En espera).
 - **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina ni pregunta de acompañantes. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual para identificar personas externas a la agrupación.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
 - **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
@@ -191,8 +191,10 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 ├── client/          # React + Vite frontend
 │   └── src/
 │       ├── pages/
-│       │   ├── admin/       # UsersPage, BookingsPage, ResourcesPage, etc.
-│       │   └── superadmin/  # SpacesPage
+│       │   ├── admin/       # UsersPage, BookingsPage, ResourcesPage, TrainingsPage, etc.
+│       │   ├── superadmin/  # SpacesPage
+│       │   ├── MyTrainingsPage.tsx  # inscripciones del usuario
+│       │   └── MyCertificationsPage.tsx
 │       ├── components/shared/  # Navbar, ConfirmModal, SortableHeader, etc.
 │       └── store/           # Zustand: authStore, bookingStore, resourceStore
 ├── server/          # Express API
@@ -216,6 +218,7 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Google Calendar sincroniza solo reservas CONFIRMED
 - Máximo **10 usuarias** por sesión de certificación
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
+- **Inscripción a capacitaciones**: cupos configurables por sesión. Al llenarse, las siguientes inscripciones van a lista de espera. Al cancelar una inscripción CONFIRMED, la primera en espera se promueve automáticamente a CONFIRMED
 
 ---
 

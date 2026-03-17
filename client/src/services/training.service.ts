@@ -1,11 +1,12 @@
 import api from './api';
-import { Training } from '../types';
+import { Training, TrainingEnrollment } from '../types';
 
 export interface CreateTrainingDto {
   title: string;
   description?: string;
   startTime: string;
   endTime: string;
+  capacity?: number;
   exemptResourceIds?: string[];
 }
 
@@ -19,4 +20,10 @@ export const trainingService = {
 
   updateExemptions: (id: string, exemptResourceIds: string[]) =>
     api.patch<Training>(`/admin/trainings/${id}/exemptions`, { exemptResourceIds }).then((r) => r.data),
+
+  enroll: (id: string) =>
+    api.post<TrainingEnrollment>(`/trainings/${id}/enroll`).then((r) => r.data),
+
+  unenroll: (id: string) =>
+    api.delete(`/trainings/${id}/enroll`),
 };

@@ -9,6 +9,7 @@ import { settingsService } from '../services/settings.service';
 import CalendarView from '../components/calendar/CalendarView';
 import BookingModal from '../components/booking/BookingModal';
 import TrainingModal from '../components/admin/TrainingModal';
+import ConfirmModal from '../components/shared/ConfirmModal';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -26,6 +27,9 @@ export default function CalendarPage() {
   const [certSessions, setCertSessions] = useState<CertificationRequest[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
   const [hoursLoaded, setHoursLoaded] = useState(false);
+  const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
+  const [confirmDeleteTraining, setConfirmDeleteTraining] = useState<Training | null>(null);
+  const [enrollLoading, setEnrollLoading] = useState(false);
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
 
@@ -105,18 +109,46 @@ export default function CalendarPage() {
     fetchTrainings();
   };
 
-  const handleTrainingClick = async (training: Training) => {
-    if (!isAdmin) return;
-    const confirmed = window.confirm(
-      `¿Eliminar la capacitación "${training.title}"?\n\nEsta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
+  const handleTrainingClick = (training: Training) => {
+    setSelectedTraining(training);
+  };
+
+  const handleDeleteTraining = async () => {
+    if (!confirmDeleteTraining) return;
     try {
-      await trainingService.remove(training.id);
+      await trainingService.remove(confirmDeleteTraining.id);
       toast.success('Capacitación eliminada');
+      setConfirmDeleteTraining(null);
+      setSelectedTraining(null);
       fetchTrainings();
     } catch {
       toast.error('Error al eliminar la capacitación');
+    }
+  };
+
+  const handleEnroll = async (training: Training) => {
+    const myEnrollment = training.enrollments.find((e) => e.userId === user?.id);
+    setEnrollLoading(true);
+    try {
+      if (myEnrollment) {
+        await trainingService.unenroll(training.id);
+        toast.success('Inscripción cancelada');
+      } else {
+        await trainingService.enroll(training.id);
+        const confirmedCount = training.enrollments.filter((e) => e.status === 'CONFIRMED').length;
+        if (confirmedCount >= training.capacity) {
+          toast.success('Agregada a lista de espera');
+        } else {
+          toast.success('Inscripción confirmada');
+        }
+      }
+      setSelectedTraining(null);
+      fetchTrainings();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al procesar inscripción');
+    } finally {
+      setEnrollLoading(false);
     }
   };
 
@@ -249,6 +281,136 @@ export default function CalendarPage() {
         preselectedDate={selectedDate}
         preselectedHour={selectedHour}
       />
+
+      {/* Modal detalle / inscripción de capacitación */}
+      {selectedTraining && (() => {
+        const t = selectedTraining;
+        const myEnrollment = t.enrollments.find((e) => e.userId === user?.id);
+        const confirmedCount = t.enrollments.filter((e) => e.status === 'CONFIRMED').length;
+        const waitlistCount = t.enrollments.filter((e) => e.status === 'WAITLIST').length;
+        const isFull = confirmedCount >= t.capacity;
+        const start = new Date(t.startTime);
+        const end = new Date(t.endTime);
+        const fmt = (d: Date) =>
+          d.toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full mb-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+                      Capacitación
+                    </span>
+                    <h2 className="text-lg font-bold text-gray-900">{t.title}</h2>
+                  </div>
+                  <button onClick={() => setSelectedTraining(null)} className="text-gray-400 hover:text-gray-600 transition-colors ml-4 shrink-0">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {t.description && (
+                  <p className="text-sm text-gray-600 mb-4">{t.description}</p>
+                )}
+
+                <div className="space-y-2 text-sm text-gray-700 mb-4">
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-16 shrink-0">Inicio</span>
+                    <span className="font-medium">{fmt(start)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-16 shrink-0">Fin</span>
+                    <span className="font-medium">{fmt(end)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-gray-400 w-16 shrink-0">Cupos</span>
+                    <span className="font-medium">
+                      {confirmedCount}/{t.capacity} ocupados
+                      {waitlistCount > 0 && <span className="text-amber-600 ml-2">({waitlistCount} en espera)</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lista de inscriptas (solo admin) */}
+                {isAdmin && t.enrollments.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Inscritas</p>
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                      {t.enrollments.map((e) => (
+                        <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="text-gray-800">{e.user.name}</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  {/* Botón inscripción (usuarios y roles elevados si no son SUPER_ADMIN) */}
+                  {user?.role !== 'SUPER_ADMIN' && (
+                    <button
+                      onClick={() => handleEnroll(t)}
+                      disabled={enrollLoading || (!myEnrollment && isFull && waitlistCount >= 20)}
+                      className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 ${
+                        myEnrollment
+                          ? 'border border-red-300 text-red-600 hover:bg-red-50'
+                          : isFull
+                          ? 'bg-amber-500 text-white hover:bg-amber-600'
+                          : 'bg-brand-600 text-white hover:bg-brand-700'
+                      }`}
+                    >
+                      {enrollLoading
+                        ? '...'
+                        : myEnrollment
+                        ? myEnrollment.status === 'WAITLIST'
+                          ? 'Salir de lista de espera'
+                          : 'Cancelar inscripción'
+                        : isFull
+                        ? 'Unirse a lista de espera'
+                        : 'Inscribirse'}
+                    </button>
+                  )}
+
+                  {/* Botón eliminar (solo admin) */}
+                  {isAdmin && (
+                    <button
+                      onClick={() => setConfirmDeleteTraining(t)}
+                      className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setSelectedTraining(null)}
+                    className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {confirmDeleteTraining && (
+        <ConfirmModal
+          title="Eliminar capacitación"
+          message={`¿Eliminar la capacitación "${confirmDeleteTraining.title}"? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar"
+          variant="danger"
+          onConfirm={handleDeleteTraining}
+          onCancel={() => setConfirmDeleteTraining(null)}
+        />
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [startHour, setStartHour] = useState(preselectedHour ?? 9);
   const [endHour, setEndHour] = useState((preselectedHour ?? 9) + 1);
+  const [capacity, setCapacity] = useState<string>('10');
   const [exemptIds, setExemptIds] = useState<string[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,6 +71,7 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
         description: description.trim() || undefined,
         startTime,
         endTime,
+        capacity: Math.max(1, parseInt(capacity, 10) || 10),
         exemptResourceIds: exemptIds,
       });
       toast.success('Capacitación creada');
@@ -90,6 +92,7 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
     setDate(format(new Date(), 'yyyy-MM-dd'));
     setStartHour(9);
     setEndHour(10);
+    setCapacity('10');
     setExemptIds([]);
   };
 
@@ -182,6 +185,20 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
                   ))}
                 </select>
               </div>
+            </div>
+
+            {/* Capacidad */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cupos disponibles *</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">Usuarias que pueden inscribirse con cupo confirmado</p>
             </div>
 
             {/* Recursos exentos */}

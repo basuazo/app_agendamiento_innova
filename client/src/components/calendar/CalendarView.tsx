@@ -229,7 +229,7 @@ export default function CalendarView({
               return;
             }
             if (info.event.extendedProps.isTraining) {
-              if (isAdmin && onTrainingClick) {
+              if (onTrainingClick) {
                 onTrainingClick(info.event.extendedProps.training as Training);
               }
               return;

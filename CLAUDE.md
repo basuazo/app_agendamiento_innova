@@ -128,13 +128,14 @@ App para reservas/
         │   │   └── CalendarView.tsx    <- FullCalendar
         │   └── admin/
         │       ├── ResourceForm.tsx
-        │       └── TrainingModal.tsx
+        │       └── TrainingModal.tsx   <- crea capacitaciones (titulo, fecha, horas, cupos, exenciones)
         └── pages/
             ├── LoginPage.tsx
             ├── RegisterPage.tsx        <- selector de espacio al registrarse
             ├── CalendarPage.tsx
             ├── MyBookingsPage.tsx
             ├── MyCertificationsPage.tsx
+            ├── MyTrainingsPage.tsx     <- inscripciones del usuario (filtro mis inscripciones / todas proximas)
             ├── CommunityPage.tsx
             ├── ProfilePage.tsx
             ├── admin/
@@ -142,10 +143,11 @@ App para reservas/
             │   ├── UsersPage.tsx
             │   ├── BookingsPage.tsx
             │   ├── CertificationsPage.tsx
-            │   ├── CategoriesPage.tsx  <- NUEVO: gestion de categorias dinamicas
+            │   ├── CategoriesPage.tsx  <- gestion de categorias dinamicas
+            │   ├── TrainingsPage.tsx   <- gestion de capacitaciones + lista de inscritas por sesion
             │   └── SettingsPage.tsx
             └── superadmin/
-                └── SpacesPage.tsx      <- NUEVO: gestion de centros productivos
+                └── SpacesPage.tsx      <- gestion de centros productivos
 ```
 
 ---
@@ -236,8 +238,9 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 | `Booking` | Reservas con status, purpose, campos especiales segun categoria |
 | `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria) |
 | `CertificationRequest` | Solicitudes de certificacion |
-| `Training` | Sesiones de capacitacion con exenciones de recursos |
+| `Training` | Sesiones de capacitacion con `capacity` (cupos), exenciones de recursos e inscripciones |
 | `TrainingExemption` | Bloqueo de recurso durante un training |
+| `TrainingEnrollment` | Inscripcion de usuaria a una capacitacion. Status CONFIRMED o WAITLIST. Unique(trainingId+userId). Al cancelar una CONFIRMED, la primera WAITLIST se promueve automaticamente |
 | `Comment` | Posts de la comunidad con tags e imagen opcional |
 | `AuditLog` | Registro de acciones administrativas |
 | `BusinessHours` | Horario de apertura por dia de semana, por espacio |
@@ -252,6 +255,7 @@ BookingPurpose:   LEARN | PRODUCE | DESIGN | REUNION
 CertReqStatus:    PENDING | SCHEDULED | APPROVED | REJECTED
 CommentTag:       GENERAL | MACHINE_ISSUE | ORDER | CLEANING
 CompanionRelation: CUIDADOS | AMISTAD | OTRO
+EnrollmentStatus: CONFIRMED | WAITLIST
 
 AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIED |
                   BOOKING_APPROVED | BOOKING_REJECTED | BOOKING_CANCELLED |
@@ -361,9 +365,12 @@ PATCH  /api/admin/certifications/requests/:id/resolve <- resolver (admin + lider
 GET    /api/admin/certifications    <- todas las certs (admin + lider_tecnica)
 DELETE /api/admin/certifications/:id <- revocar (admin + lider_tecnica)
 
-GET      /api/trainings            <- sesiones de capacitacion (cualquier auth)
-POST     /api/admin/trainings      <- crear capacitacion (admin + lider_tecnica)
-DELETE   /api/admin/trainings/:id  <- eliminar capacitacion (admin + lider_tecnica)
+GET      /api/trainings                  <- sesiones de capacitacion con enrollments (cualquier auth)
+POST     /api/trainings/:id/enroll       <- inscribirse (cualquier auth; si cupo lleno → WAITLIST)
+DELETE   /api/trainings/:id/enroll       <- desinscribirse (cualquier auth; promueve WAITLIST → CONFIRMED)
+POST     /api/admin/trainings            <- crear capacitacion (admin + lider_tecnica)
+DELETE   /api/admin/trainings/:id        <- eliminar capacitacion (admin + lider_tecnica)
+PATCH    /api/admin/trainings/:id/exemptions <- actualizar exenciones de recursos
 
 GET/POST /api/comments             <- comunidad
 DELETE   /api/comments/:id
@@ -518,6 +525,20 @@ GET      /api/health               <- health check con DB
 - Orden A→Z / Z→A al hacer click en el encabezado de cualquier columna
 - Páginas actualizadas: UsersPage, BookingsPage, CertificationsPage (3 tabs), ResourcesPage, CategoriesPage
 - En CertificationsPage: el sort se resetea al cambiar de tab; el search persiste entre tabs
+
+### Feature: Inscripcion a capacitaciones
+- Modelo `TrainingEnrollment` (trainingId, userId, status CONFIRMED|WAITLIST, createdAt). Unique(trainingId+userId)
+- Campo `capacity Int @default(10)` en modelo `Training`
+- Migracion: `20260317190556_add_training_enrollment`
+- Endpoints: `POST /api/trainings/:id/enroll` y `DELETE /api/trainings/:id/enroll` (autenticados, cualquier rol)
+- Al inscribirse: si confirmedCount < capacity → CONFIRMED, si no → WAITLIST
+- Al desinscribirse: si era CONFIRMED, se promueve la primera WAITLIST (transaccion Prisma)
+- `GET /api/trainings` incluye `enrollments` con datos de usuario en cada capacitacion
+- **TrainingModal** (`TrainingModal.tsx`): input de cupos en formulario de creacion; estado `capacity` tipo string
+- **CalendarPage**: click en training abre modal de detalle para todos los roles (no solo admin). Para usuarios: botones Inscribirse / Lista de espera / Cancelar inscripcion. Para admins: lista de inscritas + boton Eliminar (con ConfirmModal)
+- **`/my-trainings`** (`MyTrainingsPage.tsx`): filtro "Mis inscripciones" vs "Todas las proximas". Badge de estado por capacitacion. Boton contextual segun estado de inscripcion
+- **`/admin/trainings`** (`TrainingsPage.tsx`): filtro Proximas/Pasadas/Todas. Tarjeta por sesion con cupos, lista de espera, lista de inscritas expandible (nombre, email, estado, fecha). Crear y eliminar capacitaciones
+- Navbar actualizado: usuarios → `/my-trainings`; roles con `canManageTrainings` → `/admin/trainings` (desktop y movil)
 
 ---
 

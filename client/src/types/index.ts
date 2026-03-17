@@ -99,15 +99,28 @@ export interface TrainingExemption {
   resource: { id: string; name: string };
 }
 
+export type EnrollmentStatus = 'CONFIRMED' | 'WAITLIST';
+
+export interface TrainingEnrollment {
+  id: string;
+  trainingId: string;
+  userId: string;
+  status: EnrollmentStatus;
+  createdAt: string;
+  user: { id: string; name: string; email: string; organization?: string | null };
+}
+
 export interface Training {
   id: string;
   title: string;
   description?: string;
   startTime: string;
   endTime: string;
+  capacity: number;
   createdBy: string;
   createdAt: string;
   exemptions: TrainingExemption[];
+  enrollments: TrainingEnrollment[];
 }
 
 export interface Certification {

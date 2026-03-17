@@ -22,6 +22,8 @@ const CertificationsPage = lazy(() => import('./pages/admin/CertificationsPage')
 const SettingsPage       = lazy(() => import('./pages/admin/SettingsPage'));
 const CategoriesPage     = lazy(() => import('./pages/admin/CategoriesPage'));
 const SpacesPage         = lazy(() => import('./pages/superadmin/SpacesPage'));
+const TrainingsPage      = lazy(() => import('./pages/admin/TrainingsPage'));
+const MyTrainingsPage    = lazy(() => import('./pages/MyTrainingsPage'));
 
 function PageLoader() {
   return (
@@ -85,6 +87,11 @@ export default function App() {
               <Layout><MyCertificationsPage /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/my-trainings" element={
+            <ProtectedRoute>
+              <Layout><MyTrainingsPage /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/profile" element={
             <ProtectedRoute>
               <Layout><ProfilePage /></Layout>
@@ -120,6 +127,11 @@ export default function App() {
           <Route path="/admin/categories" element={
             <ProtectedRoute adminOnly>
               <Layout><CategoriesPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/trainings" element={
+            <ProtectedRoute adminOnly>
+              <Layout><TrainingsPage /></Layout>
             </ProtectedRoute>
           } />
 

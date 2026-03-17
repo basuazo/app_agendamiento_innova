@@ -50,6 +50,11 @@ enum CompanionRelation {
   OTRO
 }
 
+enum EnrollmentStatus {
+  CONFIRMED
+  WAITLIST
+}
+
 model Space {
   id                  String   @id @default(cuid())
   name                String
@@ -102,6 +107,7 @@ model User {
   bookings              Booking[]
   comments              Comment[]
   trainingsCreated      Training[]            @relation("TrainingCreator")
+  trainingEnrollments   TrainingEnrollment[]
   certifications        Certification[]       @relation("UserCertifications")
   certificationsMade    Certification[]       @relation("CertifierCertifications")
   certificationRequests CertificationRequest[] @relation("UserCertRequests")
@@ -161,13 +167,29 @@ model Training {
   description String?
   startTime   DateTime
   endTime     DateTime
+  capacity    Int       @default(10)
   createdBy   String
   spaceId     String
   createdAt   DateTime  @default(now())
 
-  space      Space               @relation(fields: [spaceId], references: [id])
-  creator    User                @relation("TrainingCreator", fields: [createdBy], references: [id])
-  exemptions TrainingExemption[]
+  space       Space                @relation(fields: [spaceId], references: [id])
+  creator     User                 @relation("TrainingCreator", fields: [createdBy], references: [id])
+  exemptions  TrainingExemption[]
+  enrollments TrainingEnrollment[]
+}
+
+model TrainingEnrollment {
+  id         String           @id @default(cuid())
+  trainingId String
+  userId     String
+  status     EnrollmentStatus @default(CONFIRMED)
+  createdAt  DateTime         @default(now())
+
+  training Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([trainingId, userId])
+  @@index([trainingId])
 }
 
 model TrainingExemption {
