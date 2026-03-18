@@ -256,6 +256,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     const trainingBlock = await prisma.training.findFirst({
       where: {
+        spaceId: resource.spaceId,
         startTime: { lt: endTime },
         endTime: { gt: startTime },
         exemptions: { none: { resourceId } },
