@@ -159,7 +159,7 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
 
 export const createBooking = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId } = req.body;
+    const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId, localDate, localStartTime, localEndTime } = req.body;
 
     // Admin / líderes pueden agendar en nombre de otra usuaria
     const bookingUserId = (['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(req.user!.role) && targetUserId) ? targetUserId : req.user!.id;
@@ -204,6 +204,28 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
     if (!resource.isActive) {
       res.status(400).json({ error: 'El recurso no está disponible actualmente' });
       return;
+    }
+
+    // Validar horario de negocio usando los tiempos locales enviados por el cliente
+    if (localDate && localStartTime && localEndTime) {
+      const dayOfWeek = new Date(`${localDate}T12:00:00`).getDay();
+      const bh = await prisma.businessHours.findUnique({
+        where: { spaceId_dayOfWeek: { spaceId: resource.spaceId, dayOfWeek } },
+      });
+      if (bh) {
+        if (!bh.isOpen) {
+          res.status(400).json({ error: 'El espacio no abre ese día' });
+          return;
+        }
+        if (localStartTime < bh.openTime) {
+          res.status(400).json({ error: `El espacio abre a las ${bh.openTime}` });
+          return;
+        }
+        if (localEndTime > bh.closeTime) {
+          res.status(400).json({ error: `El espacio cierra a las ${bh.closeTime}` });
+          return;
+        }
+      }
     }
 
     // Validate and clamp quantity for shared-capacity resources

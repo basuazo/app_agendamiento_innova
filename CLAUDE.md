@@ -293,9 +293,11 @@ AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIE
 | Recursos (CRUD) | ✓ | ✓ | ✓ |
 | Categorias (CRUD) | ✓ | — | ✓ |
 | Certificaciones (admin) | ✓ | ✓ | — |
-| Capacitaciones (crear/borrar) | ✓ | ✓ | — |
+| Capacitaciones (crear/borrar/exportar) | ✓ | ✓ | — |
+| Inscribir/desinscribir otras usuarias en capacitaciones | ✓ | ✓ | ✓ |
 | Reservas (aprobar/rechazar/ver todas) | ✓ | — | ✓ |
-| Usuarios (ver lista + verificar) | ✓ | — | ✓ |
+| Usuarios (ver lista) | ✓ | ✓ | ✓ |
+| Usuarios (verificar) | ✓ | — | ✓ |
 | Usuarios (crear/editar/borrar/rol) | ✓ | — | — |
 | Horarios de negocio | ✓ | — | — |
 | Agendar por otra usuaria (targetUserId) | ✓ | ✓ | ✓ |
@@ -331,7 +333,7 @@ POST   /api/spaces                 <- crear espacio (superadmin)
 PUT    /api/spaces/:id             <- editar espacio (superadmin)
 DELETE /api/spaces/:id             <- eliminar espacio (superadmin)
 
-GET    /api/users                  <- lista usuarios (admin + lider_comunitaria)
+GET    /api/users                  <- lista usuarios (todos los roles elevados: admin + lider_tecnica + lider_comunitaria)
 POST   /api/users                  <- crear usuario (admin)
 PATCH  /api/users/:id              <- editar usuario, acepta password y spaceId (admin)
 PATCH  /api/users/:id/verify       <- verificar usuario (admin + lider_comunitaria)
@@ -366,8 +368,9 @@ GET    /api/admin/certifications    <- todas las certs (admin + lider_tecnica)
 DELETE /api/admin/certifications/:id <- revocar (admin + lider_tecnica)
 
 GET      /api/trainings                  <- sesiones de capacitacion con enrollments (cualquier auth)
-POST     /api/trainings/:id/enroll       <- inscribirse (cualquier auth; si cupo lleno → WAITLIST)
-DELETE   /api/trainings/:id/enroll       <- desinscribirse (cualquier auth; promueve WAITLIST → CONFIRMED)
+POST     /api/trainings/:id/enroll       <- inscribirse (cualquier auth; body {targetUserId?} para roles elevados; si cupo lleno → WAITLIST)
+DELETE   /api/trainings/:id/enroll       <- desinscribirse (cualquier auth; body {targetUserId?} para roles elevados; promueve WAITLIST → CONFIRMED)
+GET      /api/admin/trainings/export     <- exportar Excel con capacitaciones e inscritas (admin + lider_tecnica)
 POST     /api/admin/trainings            <- crear capacitacion (admin + lider_tecnica)
 DELETE   /api/admin/trainings/:id        <- eliminar capacitacion (admin + lider_tecnica)
 PATCH    /api/admin/trainings/:id/exemptions <- actualizar exenciones de recursos
@@ -388,10 +391,12 @@ GET      /api/health               <- health check con DB
 - Usuario sin cert en la categoria → reserva PENDING (requiere aprobacion admin)
 - Roles elevados o recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Deteccion de conflictos:** `startA < endB AND endA > startB` → 409
+- **Horario de negocio**: reservas validadas contra `BusinessHours` del espacio tanto en frontend como en backend. Frontend usa strings HH:MM locales para evitar ambiguedad de zona horaria. Backend recibe `localDate`, `localStartTime`, `localEndTime` en el body de creacion de reserva y consulta `BusinessHours` via `findUnique({ spaceId_dayOfWeek })`. Comparacion HH:MM como string lexicografica es suficiente y sin timezone.
 - Horario flexible hasta 4 horas por reserva; configurable via BusinessHours (default 09:00-17:00, por espacio)
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
 - Maximo 10 usuarias por sesion de certificacion
 - Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
+- Roles elevados pueden inscribir/desinscribir otras usuarias en capacitaciones (`targetUserId` en el body de enroll/unenroll)
 - `ESPACIO_REUNION` (slug): auto-selecciona el recurso, oculta selector de maquina y pregunta de acompanante. Muestra campo de N° asistentes (→ `attendees`) y notas con label/placeholder contextual para identificar personas externas a la agrupacion
 - **Aforo**: `Space.maxCapacity` limita asistentes totales en reservas de maquinas; `Space.maxCapacityReunion` limita asistentes por reserva de sala. Valores configurables desde SettingsPage. El check en booking.controller distingue slug `ESPACIO_REUNION` vs. el resto. No aplica a ADMIN/SUPER_ADMIN
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
@@ -540,6 +545,36 @@ GET      /api/health               <- health check con DB
 - **`/admin/trainings`** (`TrainingsPage.tsx`): filtro Proximas/Pasadas/Todas. Tarjeta por sesion con cupos, lista de espera, lista de inscritas expandible (nombre, email, estado, fecha). Crear y eliminar capacitaciones
 - Navbar actualizado: usuarios → `/my-trainings`; roles con `canManageTrainings` → `/admin/trainings` (desktop y movil)
 
+### Feature: Inscripcion de otras usuarias en capacitaciones (roles elevados)
+- Endpoints `POST /api/trainings/:id/enroll` y `DELETE /api/trainings/:id/enroll` aceptan `{ targetUserId }` en el body
+- Si `targetUserId` presente y actor es rol elevado (ELEVATED_ROLES), se inscribe/desincribe a esa usuaria en lugar del actor
+- Error 403 si un USER intenta usar `targetUserId`
+- **`GET /api/users` usa `requireElevated`** (antes `requireComunitaria`): LIDER_TECNICA ahora puede listar usuarios del espacio, necesario para el selector de inscripcion en TrainingsPage
+- **`TrainingsPage.tsx`**: al expandir una sesion, muestra un **combobox de busqueda** (componente `UserCombobox` inline) que filtra las usuarias no inscritas aun por nombre o email, y un boton "Inscribir". Cada fila de inscritas tiene un boton `✕` para desinscribir individualmente
+- `UserCombobox`: input tipo texto con dropdown filtrado, cierra al hacer clic fuera (`mousedown` listener), resetea al seleccionar
+
+### Feature: Exportacion de capacitaciones a Excel
+- Ruta: `GET /api/admin/trainings/export` (requireTecnica)
+- Genera archivo `capacitaciones.xlsx` con una fila por inscripcion (capacitaciones sin inscritas aparecen como fila con campos de usuaria vacios)
+- Columnas: Capacitacion, Descripcion, Fecha, Hora Inicio, Hora Fin, Cupos totales, Confirmadas, Lista de espera, Usuaria inscrita, Email usuaria, Estado inscripcion, Fecha inscripcion
+- Frontend: boton "Exportar Excel" en `TrainingsPage.tsx` junto al boton de nueva capacitacion; `trainingService.exportAll()` con `responseType: 'blob'`
+- Ruta estatica `/admin/trainings/export` declarada ANTES de la dinamica `/:id` para evitar que Express la interprete como ID
+
+### Feature: Inputs de hora en formato 24h y sin bloqueo al borrar
+- Inputs `type="time"` en `BookingModal` reemplazados por `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`
+- Permite borrar completamente el campo sin quedar atascado en un segmento (comportamiento nativo del browser con `type="time"`)
+- Helper `isValidTime(t: string): boolean` con regex `/^\d{2}:\d{2}$/` usado para: guardado de disponibilidad, validacion inline de duracion y validacion al enviar
+- Inputs numericos `reunionAttendees`, `produceQty`, `companionCount` cambiados de `number` a `string` como estado React; `parseInt()` con fallback a 1 solo al enviar el formulario
+- Regla general: usar `useState<string>` para inputs numericos que el usuario debe poder borrar completamente; parsear solo al guardar/enviar
+
+### Feature: Validacion de horario de negocio en reservas
+- **Frontend (`BookingModal.tsx`)**: recibe prop `businessHours?: BusinessHours[]` desde `CalendarPage` (ya los cargaba para FullCalendar)
+- `dayHours`: lookup del dia seleccionado con `businessHours.find(h => h.dayOfWeek === new Date(date + 'T12:00:00').getDay())`. El `T12:00:00` evita que parsear solo la fecha como UTC-midnight cause desfase de dia en zonas UTC-X
+- Feedback visual en tiempo real: hint de horario bajo el campo fecha ("Horario del espacio: 09:00 – 17:00" o "El espacio no abre ese dia"), borde rojo + texto de error en el input de hora si startTime < openTime o endTime > closeTime
+- Validacion al enviar: bloquea si dia cerrado, si startTime < openTime, o si endTime > closeTime
+- **Backend (`booking.controller.ts`)**: recibe `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) en el body del POST. Usa `new Date(localDate + 'T12:00:00').getDay()` para el dayOfWeek. Consulta `BusinessHours` via `prisma.businessHours.findUnique({ where: { spaceId_dayOfWeek } })`. Comparacion de HH:MM como strings lexicograficas (ej. `"14:00" > "09:00"`) funciona correctamente y sin problemas de zona horaria
+- `CreateBookingDto` en `booking.service.ts` incluye los tres campos opcionales `localDate?`, `localStartTime?`, `localEndTime?`
+
 ---
 
 ## Credenciales del seed
@@ -571,3 +606,8 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **Render + devDependencies:** Render setea `NODE_ENV=production`, lo que hace que `npm install` salte devDeps. Fix: `client/.npmrc` y `server/.npmrc` con `production=false`, mas la var de entorno `NPM_CONFIG_PRODUCTION=false` en Render.
 - **Seed con dotenv override:** `server/prisma/seed.ts` carga dotenv con `override: true` apuntando a `server/.env`. Si `DATABASE_URL` existe como var de entorno del sistema (ej. apuntando a localhost), se sobreescribe con el valor del `.env`. El script ya no usa `-r dotenv/config`.
 - **Neon connection string:** requiere `?sslmode=require` (y opcionalmente `&channel_binding=require`). Sin esto Prisma no conecta en produccion.
+- **Inputs numericos en formularios:** usar `useState<string>` (no `number`) para cualquier input numerico que el usuario deba poder borrar completamente. Parsear con `parseInt(val, 10) || fallback` solo al enviar/guardar. Ver `reunionAttendees`, `produceQty`, `companionCount`, `capacity` (TrainingModal), `maxCapacity` (SettingsPage).
+- **Inputs de hora:** usar `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`. No usar `type="time"` — el browser controla la edicion segmento a segmento y no permite borrar todo el valor. Validar con regex `/^\d{2}:\d{2}$/` antes de parsear. Comparacion de horarios HH:MM como strings lexicograficas funciona correctamente.
+- **Validacion de horario de negocio sin timezone:** pasar `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) como campos adicionales en el body de creacion de reserva. El backend usa estos valores directamente contra `BusinessHours.openTime`/`closeTime` sin conversion de zona horaria. En el frontend, `new Date(date + 'T12:00:00').getDay()` para obtener el dia de la semana evita desfase UTC.
+- **Rutas estaticas antes de dinamicas en Express:** `/admin/trainings/export` debe declararse ANTES de `/admin/trainings/:id` para que Express no interprete "export" como un ID de capacitacion.
+- **GET /api/users ahora usa `requireElevated`:** LIDER_TECNICA puede listar usuarios del espacio (necesario para el combobox de inscripcion en TrainingsPage). Antes solo `requireComunitaria` tenia acceso.

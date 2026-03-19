@@ -14,6 +14,10 @@ export interface CreateBookingDto {
   attendees?: number;
   companionRelation?: 'CUIDADOS' | 'AMISTAD' | 'OTRO';
   targetUserId?: string;
+  /** Fecha local YYYY-MM-DD y horas HH:MM — usadas en el servidor para validar horario de negocio sin ambigüedad de zona horaria */
+  localDate?: string;
+  localStartTime?: string;
+  localEndTime?: string;
 }
 
 export const bookingService = {

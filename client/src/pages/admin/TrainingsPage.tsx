@@ -1,26 +1,115 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { Training } from '../../types';
+import { Training, User } from '../../types';
 import { trainingService } from '../../services/training.service';
+import { userService } from '../../services/user.service';
 import TrainingModal from '../../components/admin/TrainingModal';
 import ConfirmModal from '../../components/shared/ConfirmModal';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
 
+// Combobox de búsqueda de usuarias
+function UserCombobox({
+  users,
+  value,
+  onSelect,
+}: {
+  users: User[];
+  value: string;        // userId seleccionado
+  onSelect: (userId: string, label: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sincroniza el texto del input cuando el valor externo se limpia
+  const selectedUser = users.find((u) => u.id === value);
+  const inputValue = open ? query : (selectedUser ? `${selectedUser.name} (${selectedUser.email})` : query);
+
+  const filtered = users.filter((u) => {
+    const q = query.toLowerCase();
+    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  const handleSelect = (u: User) => {
+    onSelect(u.id, `${u.name} (${u.email})`);
+    setQuery('');
+    setOpen(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    if (!open) setOpen(true);
+    if (!e.target.value) onSelect('', '');
+  };
+
+  // Cerrar al hacer clic fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative flex-1">
+      <input
+        type="text"
+        value={inputValue}
+        onChange={handleInputChange}
+        onFocus={() => { setQuery(''); setOpen(true); }}
+        placeholder="Buscar por nombre o email..."
+        className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+      />
+      {open && (
+        <ul className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-gray-400">Sin resultados</li>
+          ) : (
+            filtered.map((u) => (
+              <li
+                key={u.id}
+                onMouseDown={() => handleSelect(u)}
+                className="px-3 py-2 cursor-pointer hover:bg-amber-50 text-sm"
+              >
+                <span className="font-medium text-gray-800">{u.name}</span>
+                <span className="text-gray-400 text-xs ml-1">({u.email})</span>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function TrainingsPage() {
   const { currentSpaceId } = useAuthStore();
   const [trainings, setTrainings] = useState<Training[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Training | null>(null);
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+  // Inscribir por otra usuaria: { [trainingId]: userId seleccionado }
+  const [enrollTarget, setEnrollTarget] = useState<Record<string, string>>({});
+  const [enrollLoading, setEnrollLoading] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const load = async () => {
     try {
       setIsLoading(true);
-      const data = await trainingService.getAll();
+      const [data, usersData] = await Promise.all([
+        trainingService.getAll(),
+        userService.getAll(),
+      ]);
       setTrainings(data);
+      setUsers(usersData);
     } catch {
       toast.error('Error al cargar capacitaciones');
     } finally {
@@ -32,6 +121,37 @@ export default function TrainingsPage() {
     load();
   }, [currentSpaceId]);
 
+  const handleEnrollFor = async (trainingId: string) => {
+    const targetUserId = enrollTarget[trainingId];
+    if (!targetUserId) return;
+    setEnrollLoading(trainingId);
+    try {
+      await trainingService.enroll(trainingId, targetUserId);
+      toast.success('Usuaria inscrita correctamente');
+      setEnrollTarget((prev) => ({ ...prev, [trainingId]: '' }));
+      load();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al inscribir la usuaria');
+    } finally {
+      setEnrollLoading(null);
+    }
+  };
+
+  const handleUnenrollFor = async (trainingId: string, userId: string) => {
+    setEnrollLoading(`${trainingId}-${userId}`);
+    try {
+      await trainingService.unenroll(trainingId, userId);
+      toast.success('Inscripción cancelada');
+      load();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al cancelar la inscripción');
+    } finally {
+      setEnrollLoading(null);
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirmDelete) return;
     try {
@@ -42,6 +162,23 @@ export default function TrainingsPage() {
       load();
     } catch {
       toast.error('Error al eliminar la capacitación');
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const blob = await trainingService.exportAll();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'capacitaciones.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Error al exportar capacitaciones');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -82,15 +219,27 @@ export default function TrainingsPage() {
             Gestión de sesiones y listado de inscritas
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Nueva Capacitación
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 border border-gray-200 bg-white text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-60"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            {exporting ? 'Exportando...' : 'Exportar Excel'}
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Nueva Capacitación
+          </button>
+        </div>
       </div>
 
       {/* Filtro */}
@@ -124,6 +273,8 @@ export default function TrainingsPage() {
             const waitlistCount = t.enrollments.filter((e) => e.status === 'WAITLIST').length;
             const isPast = new Date(t.endTime) < now;
             const isExpanded = expanded === t.id;
+            // Usuarias no inscritas aún en esta capacitación
+            const availableUsers = users.filter((u) => !t.enrollments.some((e) => e.userId === u.id));
 
             return (
               <div key={t.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -178,37 +329,74 @@ export default function TrainingsPage() {
 
                 {/* Lista de inscritas expandible */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                    {t.enrollments.length === 0 ? (
-                      <p className="text-xs text-gray-400 text-center py-2">Sin inscritas aún</p>
-                    ) : (
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                          Inscritas ({t.enrollments.length})
-                        </p>
-                        {t.enrollments.map((e, idx) => (
-                          <div key={e.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
-                              <div>
-                                <p className="text-sm text-gray-800">{e.user.name}</p>
-                                <p className="text-xs text-gray-400">{e.user.email}</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-col items-end gap-1">
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                                e.status === 'CONFIRMED'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-amber-100 text-amber-700'
-                              }`}>
-                                {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
-                              </span>
-                              <span className="text-xs text-gray-400">{fmt(e.createdAt)}</span>
-                            </div>
-                          </div>
-                        ))}
+                  <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-3">
+                    {/* Inscribir por otra usuaria */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Inscribir usuaria
+                      </p>
+                      <div className="flex gap-2">
+                        <UserCombobox
+                          users={availableUsers}
+                          value={enrollTarget[t.id] ?? ''}
+                          onSelect={(userId) => setEnrollTarget((prev) => ({ ...prev, [t.id]: userId }))}
+                        />
+                        <button
+                          onClick={() => handleEnrollFor(t.id)}
+                          disabled={!enrollTarget[t.id] || enrollLoading === t.id}
+                          className="px-3 py-1.5 bg-amber-500 text-white text-xs font-medium rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors whitespace-nowrap"
+                        >
+                          {enrollLoading === t.id ? '...' : 'Inscribir'}
+                        </button>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Lista */}
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Inscritas ({t.enrollments.length})
+                      </p>
+                      {t.enrollments.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-2">Sin inscritas aún</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {t.enrollments.map((e, idx) => {
+                            const unenrollKey = `${t.id}-${e.userId}`;
+                            return (
+                              <div key={e.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-400 w-5">{idx + 1}.</span>
+                                  <div>
+                                    <p className="text-sm text-gray-800">{e.user.name}</p>
+                                    <p className="text-xs text-gray-400">{e.user.email}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                      e.status === 'CONFIRMED'
+                                        ? 'bg-green-100 text-green-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
+                                    </span>
+                                    <span className="text-xs text-gray-400">{fmt(e.createdAt)}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleUnenrollFor(t.id, e.userId)}
+                                    disabled={enrollLoading === unenrollKey}
+                                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 transition-colors ml-1"
+                                    title="Desinscribir"
+                                  >
+                                    {enrollLoading === unenrollKey ? '...' : '✕'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

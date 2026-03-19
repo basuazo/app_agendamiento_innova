@@ -115,12 +115,15 @@ npm run dev
 | Gestionar recursos | ✓ | ✓ | ✓ |
 | Gestionar categorías | ✓ | — | ✓ |
 | Certificaciones (admin) | ✓ | ✓ | — |
-| Capacitaciones | ✓ | ✓ | — |
+| Capacitaciones (crear/eliminar) | ✓ | ✓ | — |
+| Exportar capacitaciones a Excel | ✓ | ✓ | — |
+| Inscribir/desinscribir otras usuarias | ✓ | ✓ | ✓ |
 | Aprobar/rechazar reservas | ✓ | — | ✓ |
 | Ver todas las reservas | ✓ | — | ✓ |
 | Exportar reservas a Excel | ✓ | — | ✓ |
 | Agendar por otra usuaria | ✓ | ✓ | ✓ |
-| Ver y verificar usuarios | ✓ | — | ✓ |
+| Ver lista de usuarios | ✓ | ✓ | ✓ |
+| Verificar nuevos usuarios | ✓ | — | ✓ |
 | Crear/editar/eliminar usuarios | ✓ | — | — |
 | Configurar horarios y aforo | ✓ | — | — |
 
@@ -143,14 +146,17 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 ## Features principales
 
 - **Calendario de reservas**: vista semanal. Click en celda para reservar, click en slot ocupado para ver detalle o crear nueva reserva encima. Horario configurable por espacio (BusinessHours). Tiempo libre de hasta 4 horas por reserva.
+- **Validación de horario de negocio**: el formulario de reserva muestra el horario del espacio en tiempo real y bloquea horas fuera del rango configurado, tanto en frontend (feedback inmediato) como en backend (validación de seguridad).
 - **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
 - **Capacitaciones**: el admin/Líder Técnica crea sesiones de capacitación con cupos configurables. Las usuarias se inscriben directamente desde `/my-trainings` o desde el calendario; si los cupos están llenos, quedan en lista de espera y se promocionan automáticamente al liberarse un cupo. La página `/admin/trainings` muestra el listado completo con las inscritas y su estado (Confirmada / En espera).
+- **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings`, usando un combobox de búsqueda por nombre o email.
+- **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones (nombre, email, estado, fecha).
 - **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina ni pregunta de acompañantes. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual para identificar personas externas a la agrupación.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
 - **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
 - **Roles jerárquicos**: cinco roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA, USER).
 - **Agendar por otra usuaria**: todos los roles elevados (ADMIN, SUPER_ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA) pueden crear reservas a nombre de cualquier usuaria del espacio. El BookingModal muestra un paso previo de selección de usuaria cuando el actor tiene un rol elevado.
-- **Exportación a Excel**: desde la página Todas las Reservas, ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA pueden descargar un archivo `.xlsx` con el detalle completo de las reservas del espacio activo (fecha, horario, recurso, categoría, usuaria, propósito, ítem a producir, cantidad, asistentes, relación de acompañantes, estado y notas).
+- **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA pueden descargar un archivo `.xlsx` con el detalle completo de las reservas del espacio activo (fecha, horario, recurso, categoría, usuaria, propósito, ítem a producir, cantidad, asistentes, relación de acompañantes, estado y notas).
 - **Aforo configurable**: cada espacio tiene dos límites de personas editables desde la página de Configuración — uno para uso de máquinas (suma de asistentes concurrentes) y otro para la sala de reuniones (límite por reserva). El sistema bloquea reservas que superen el aforo configurado.
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
@@ -211,7 +217,8 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 
 ## Reglas de negocio
 
-- Slots de **1 hora**; horario configurable por espacio (default lun–sáb 09:00–17:00)
+- Slots de **hasta 4 horas**; horario configurable por espacio (default lun–sáb 09:00–17:00)
+- **Horario de negocio**: las reservas no pueden crearse fuera del horario configurado del espacio. El formulario muestra el horario en tiempo real y el backend lo valida independientemente.
 - **Certificación por categoría**, no por máquina individual. Sin cert → reserva PENDING
 - Admin y recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Conflicto**: `startA < endB AND endA > startB` → error 409
@@ -219,6 +226,7 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Máximo **10 usuarias** por sesión de certificación
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
 - **Inscripción a capacitaciones**: cupos configurables por sesión. Al llenarse, las siguientes inscripciones van a lista de espera. Al cancelar una inscripción CONFIRMED, la primera en espera se promueve automáticamente a CONFIRMED
+- **Inscripción por roles elevados**: ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA pueden inscribir y desinscribir a otras usuarias en capacitaciones
 
 ---
 

@@ -272,6 +272,7 @@ export default function CalendarPage() {
         isOpen={bookingModalOpen}
         onClose={handleBookingModalClose}
         preselectedDate={selectedDate}
+        businessHours={businessHours}
       />
 
       <TrainingModal

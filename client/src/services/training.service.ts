@@ -21,9 +21,12 @@ export const trainingService = {
   updateExemptions: (id: string, exemptResourceIds: string[]) =>
     api.patch<Training>(`/admin/trainings/${id}/exemptions`, { exemptResourceIds }).then((r) => r.data),
 
-  enroll: (id: string) =>
-    api.post<TrainingEnrollment>(`/trainings/${id}/enroll`).then((r) => r.data),
+  enroll: (id: string, targetUserId?: string) =>
+    api.post<TrainingEnrollment>(`/trainings/${id}/enroll`, targetUserId ? { targetUserId } : {}).then((r) => r.data),
 
-  unenroll: (id: string) =>
-    api.delete(`/trainings/${id}/enroll`),
+  unenroll: (id: string, targetUserId?: string) =>
+    api.delete(`/trainings/${id}/enroll`, { data: targetUserId ? { targetUserId } : undefined }),
+
+  exportAll: () =>
+    api.get('/admin/trainings/export', { responseType: 'blob' }).then((r) => r.data as Blob),
 };

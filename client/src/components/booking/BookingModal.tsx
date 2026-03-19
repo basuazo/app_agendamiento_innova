@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Resource, ResourceAvailability, Category, Certification, User } from '../../types';
+import { Resource, ResourceAvailability, Category, Certification, User, BusinessHours } from '../../types';
 import { useBookingStore } from '../../store/bookingStore';
 import { useResourceStore } from '../../store/resourceStore';
 import { useAuthStore } from '../../store/authStore';
@@ -15,9 +15,10 @@ interface Props {
   onClose: () => void;
   preselectedDate?: Date;
   preselectedResource?: Resource;
+  businessHours?: BusinessHours[];
 }
 
-export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource }: Props) {
+export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource, businessHours = [] }: Props) {
   const { create } = useBookingStore();
   const { resources, fetchAll } = useResourceStore();
   const { user } = useAuthStore();
@@ -43,13 +44,13 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
   const [purpose, setPurpose] = useState<'LEARN' | 'PRODUCE' | 'DESIGN'>('LEARN');
   const [isPrivate, setIsPrivate] = useState(false);
   const [produceItem, setProduceItem] = useState('');
-  const [produceQty, setProduceQty] = useState(1);
+  const [produceQty, setProduceQty] = useState<string>('1');
   const [notes, setNotes] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [withCompanions, setWithCompanions] = useState(false);
-  const [companionCount, setCompanionCount] = useState(1);
+  const [companionCount, setCompanionCount] = useState<string>('1');
   const [companionRelation, setCompanionRelation] = useState<'CUIDADOS' | 'AMISTAD' | 'OTRO'>('AMISTAD');
-  const [reunionAttendees, setReunionAttendees] = useState(2);
+  const [reunionAttendees, setReunionAttendees] = useState<string>('2');
   const [loading, setLoading] = useState(false);
   const [availability, setAvailability] = useState<ResourceAvailability | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -83,8 +84,15 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     }
   }, [preselectedResource, isAdmin]);
 
+  // Horario del día seleccionado (usar T12:00:00 para evitar desfase UTC al parsear solo la fecha)
+  const dayHours = date
+    ? businessHours.find((h) => h.dayOfWeek === new Date(`${date}T12:00:00`).getDay()) ?? null
+    : null;
+
+  const isValidTime = (t: string) => /^\d{2}:\d{2}$/.test(t);
+
   const fetchAvailability = useCallback(async () => {
-    if (!date || !startTime || !endTime) return;
+    if (!date || !isValidTime(startTime) || !isValidTime(endTime)) return;
     setCheckingAvailability(true);
     try {
       const startIso = new Date(`${date}T${startTime}:00`).toISOString();
@@ -117,14 +125,14 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     setEndTime('10:00');
     setPurpose('LEARN');
     setProduceItem('');
-    setProduceQty(1);
+    setProduceQty('1');
     setNotes('');
     setQuantity(1);
     setIsPrivate(false);
     setWithCompanions(false);
-    setCompanionCount(1);
+    setCompanionCount('1');
     setCompanionRelation('AMISTAD');
-    setReunionAttendees(2);
+    setReunionAttendees('2');
     setAvailability(null);
     setBookingForSelf(true);
     setTargetUserId('');
@@ -146,7 +154,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     setQuantity(1);
     setIsPrivate(false);
     setWithCompanions(false);
-    setCompanionCount(1);
+    setCompanionCount('1');
     setCompanionRelation('AMISTAD');
     // Para Espacio de Reuniones, auto-seleccionar el único recurso
     if (cat.slug === 'ESPACIO_REUNION') {
@@ -167,6 +175,11 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       return;
     }
 
+    if (!isValidTime(startTime) || !isValidTime(endTime)) {
+      toast.error('Ingresa las horas en formato HH:MM (ej: 09:00)');
+      return;
+    }
+
     const startDate = new Date(`${date}T${startTime}:00`);
     const endDate = new Date(`${date}T${endTime}:00`);
 
@@ -180,6 +193,26 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       return;
     }
 
+    // Validar horario de negocio
+    if (dayHours && businessHours.length > 0) {
+      if (!dayHours.isOpen) {
+        toast.error('El espacio no abre ese día');
+        return;
+      }
+      if (startTime < dayHours.openTime) {
+        toast.error(`El espacio abre a las ${dayHours.openTime}. Ajusta la hora de inicio.`);
+        return;
+      }
+      if (endTime > dayHours.closeTime) {
+        toast.error(`El espacio cierra a las ${dayHours.closeTime}. Ajusta la hora de término.`);
+        return;
+      }
+    }
+
+    const parsedProduceQty = Math.max(1, parseInt(produceQty, 10) || 1);
+    const parsedCompanionCount = Math.max(1, parseInt(companionCount, 10) || 1);
+    const parsedReunionAttendees = Math.max(1, parseInt(reunionAttendees, 10) || 1);
+
     setLoading(true);
     try {
       await create({
@@ -188,13 +221,16 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
         endTime: endDate.toISOString(),
         purpose: selectedCategory?.slug === 'ESPACIO_REUNION' ? 'REUNION' : purpose,
         produceItem: purpose === 'PRODUCE' ? produceItem : undefined,
-        produceQty: purpose === 'PRODUCE' ? produceQty : undefined,
+        produceQty: purpose === 'PRODUCE' ? parsedProduceQty : undefined,
         quantity: selectedCategory?.slug === 'MESON_CORTE' ? quantity : 1,
         notes: notes || undefined,
         isPrivate: selectedCategory?.slug === 'ESPACIO_REUNION' ? isPrivate : undefined,
-        attendees: selectedCategory?.slug === 'ESPACIO_REUNION' ? reunionAttendees : (withCompanions ? 1 + companionCount : undefined),
+        attendees: selectedCategory?.slug === 'ESPACIO_REUNION' ? parsedReunionAttendees : (withCompanions ? 1 + parsedCompanionCount : undefined),
         companionRelation: selectedCategory?.slug !== 'ESPACIO_REUNION' && withCompanions ? companionRelation : undefined,
         targetUserId: isAdmin && !bookingForSelf && targetUserId ? targetUserId : undefined,
+        localDate: date,
+        localStartTime: startTime,
+        localEndTime: endTime,
       });
       const selectedResource = categoryResources.find((r) => r.id === resourceId);
       const willBeConfirmed =
@@ -468,33 +504,53 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                 required
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
               />
+              {dayHours && (
+                dayHours.isOpen
+                  ? <p className="text-xs text-gray-400 mt-1">Horario del espacio: {dayHours.openTime} – {dayHours.closeTime}</p>
+                  : <p className="text-xs text-red-500 mt-1">El espacio no abre ese día</p>
+              )}
             </div>
 
             {/* Hora inicio / término */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hora de inicio *</label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hora de término *</label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  required
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-            </div>
             {(() => {
-              if (!startTime || !endTime) return null;
+              const startOutOfRange = dayHours?.isOpen && isValidTime(startTime) && startTime < dayHours.openTime;
+              const endOutOfRange = dayHours?.isOpen && isValidTime(endTime) && endTime > dayHours.closeTime;
+              const baseInput = 'w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2';
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Hora de inicio *</label>
+                    <input
+                      type="text"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      placeholder="HH:MM"
+                      maxLength={5}
+                      className={`${baseInput} ${startOutOfRange ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-brand-500'}`}
+                    />
+                    {startOutOfRange && (
+                      <p className="text-xs text-red-500 mt-0.5">Antes de apertura ({dayHours!.openTime})</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Hora de término *</label>
+                    <input
+                      type="text"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      placeholder="HH:MM"
+                      maxLength={5}
+                      className={`${baseInput} ${endOutOfRange ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-brand-500'}`}
+                    />
+                    {endOutOfRange && (
+                      <p className="text-xs text-red-500 mt-0.5">Después del cierre ({dayHours!.closeTime})</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+            {(() => {
+              if (!isValidTime(startTime) || !isValidTime(endTime)) return null;
               const s = new Date(`2000-01-01T${startTime}:00`);
               const e = new Date(`2000-01-01T${endTime}:00`);
               const diffMs = e.getTime() - s.getTime();
@@ -648,7 +704,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                 <input
                   type="number"
                   value={reunionAttendees}
-                  onChange={(e) => setReunionAttendees(Math.max(1, Number(e.target.value)))}
+                  onChange={(e) => setReunionAttendees(e.target.value)}
                   min={1}
                   required
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -677,7 +733,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                   <input
                     type="number"
                     value={produceQty}
-                    onChange={(e) => setProduceQty(Number(e.target.value))}
+                    onChange={(e) => setProduceQty(e.target.value)}
                     min={1}
                     required
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -723,14 +779,14 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                       <input
                         type="number"
                         value={companionCount}
-                        onChange={(e) => setCompanionCount(Math.max(1, Number(e.target.value)))}
+                        onChange={(e) => setCompanionCount(e.target.value)}
                         min={1}
                         max={11}
                         required
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                       />
                       <p className="text-xs text-gray-400 mt-1">
-                        Total en el espacio: {1 + companionCount} persona{1 + companionCount > 1 ? 's' : ''}
+                        {(() => { const n = 1 + (parseInt(companionCount, 10) || 0); return `Total en el espacio: ${n} persona${n > 1 ? 's' : ''}`; })()}
                       </p>
                     </div>
                     <div>
