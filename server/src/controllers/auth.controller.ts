@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma';
+import { logger } from '../app';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -46,7 +47,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     res.status(201).json({ message: 'Registro exitoso. Tu cuenta está pendiente de verificación por el administrador.' });
   } catch (error) {
-    console.error('Error en registro:', error);
+    logger.error({ err: error }, 'Error en registro');
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
@@ -92,7 +93,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       token,
     });
   } catch (error) {
-    console.error('Error en login:', error);
+    logger.error({ err: error }, 'Error en login');
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
@@ -142,7 +143,7 @@ export const updateMe = async (req: Request & { user?: { id: string } }, res: Re
 
     res.json(user);
   } catch (error) {
-    console.error('Error al actualizar perfil:', error);
+    logger.error({ err: error }, 'Error al actualizar perfil');
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };
@@ -181,7 +182,7 @@ export const changePassword = async (req: Request & { user?: { id: string } }, r
 
     res.json({ message: 'Contraseña actualizada correctamente' });
   } catch (error) {
-    console.error('Error al cambiar contraseña:', error);
+    logger.error({ err: error }, 'Error al cambiar contraseña');
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };

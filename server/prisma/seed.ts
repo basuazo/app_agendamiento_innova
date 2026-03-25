@@ -2,6 +2,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
 
+if (process.env.NODE_ENV === 'production') {
+  console.error('ERROR: No ejecutar seed en producción. Abortando.');
+  process.exit(1);
+}
+
 import { PrismaClient, Role, BookingPurpose, BookingStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'path';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -43,6 +44,9 @@ export const logger = pino({
 // ── App Express ───────────────────────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT ?? 3001;
+
+// Compresión HTTP (gzip/brotli)
+app.use(compression());
 
 // Seguridad: headers HTTP
 app.use(helmet());

@@ -5,6 +5,7 @@ import prisma from '../lib/prisma';
 import { checkConflict } from '../services/booking.service';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/googleCalendar.service';
 import { logAudit } from '../lib/audit';
+import { logger } from '../app';
 
 function fmtDate(d: Date) {
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -393,7 +394,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     res.status(201).json(booking);
   } catch (error) {
-    console.error('Error al crear reserva:', error);
+    logger.error({ err: error }, 'Error al crear reserva');
     res.status(500).json({ error: 'Error al crear la reserva' });
   }
 };
@@ -696,7 +697,7 @@ export const exportBookings = async (req: AuthRequest, res: Response): Promise<v
     res.setHeader('Content-Disposition', 'attachment; filename="reservas.xlsx"');
     res.send(buffer);
   } catch (error) {
-    console.error('Error al exportar reservas:', error);
+    logger.error({ err: error }, 'Error al exportar reservas');
     res.status(500).json({ error: 'Error al exportar reservas' });
   }
 };

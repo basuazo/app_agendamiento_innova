@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
+import { logger } from '../app';
 
 const VALID_TAGS = ['GENERAL', 'MACHINE_ISSUE', 'ORDER', 'CLEANING'];
 
@@ -61,7 +62,7 @@ export const createComment = async (req: AuthRequest, res: Response): Promise<vo
     });
     res.status(201).json(comment);
   } catch (error) {
-    console.error('Error al publicar comentario:', error);
+    logger.error({ err: error }, 'Error al publicar comentario');
     res.status(500).json({ error: 'Error al publicar comentario' });
   }
 };

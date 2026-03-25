@@ -3,6 +3,7 @@ import * as xlsx from 'xlsx';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import { ELEVATED_ROLES } from '../middleware/role.middleware';
 import prisma from '../lib/prisma';
+import { logger } from '../app';
 
 const ENROLLMENT_INCLUDE = {
   user: { select: { id: true, name: true, email: true, organization: true } },
@@ -90,7 +91,7 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
 
     res.status(201).json(training);
   } catch (error) {
-    console.error('Error al crear capacitación:', error);
+    logger.error({ err: error }, 'Error al crear capacitación');
     res.status(500).json({ error: 'Error al crear la capacitación' });
   }
 };
@@ -362,7 +363,7 @@ export const exportTrainings = async (req: AuthRequest, res: Response): Promise<
     res.setHeader('Content-Disposition', 'attachment; filename="capacitaciones.xlsx"');
     res.send(buffer);
   } catch (error) {
-    console.error('Error al exportar capacitaciones:', error);
+    logger.error({ err: error }, 'Error al exportar capacitaciones');
     res.status(500).json({ error: 'Error al exportar capacitaciones' });
   }
 };
