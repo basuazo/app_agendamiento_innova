@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
-import { logger } from '../app';
+import logger from '../lib/logger';
 
 const VALID_TAGS = ['GENERAL', 'MACHINE_ISSUE', 'ORDER', 'CLEANING'];
 

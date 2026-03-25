@@ -3,7 +3,7 @@ import * as xlsx from 'xlsx';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import { ELEVATED_ROLES } from '../middleware/role.middleware';
 import prisma from '../lib/prisma';
-import { logger } from '../app';
+import logger from '../lib/logger';
 
 const ENROLLMENT_INCLUDE = {
   user: { select: { id: true, name: true, email: true, organization: true } },

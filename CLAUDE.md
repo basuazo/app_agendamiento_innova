@@ -410,6 +410,7 @@ GET      /api/health               <- health check con DB
 - **Agrupacion de actividades en CalendarView (union-find):** `clusterVisibleEvents()` en `CalendarView.tsx` usa algoritmo union-find para detectar grupos de eventos que se solapan (`sA < eB && eA > sB`). Grupos de 1 → evento original; grupos de 2+ → evento cluster slate `#475569` con label "N actividades". Los `trainingBgEvents` (display:'background') se excluyen del clustering. El `handleDateClick` tambien usa la misma logica para detectar actividades al hacer click y abrir el `clusterModal` en lugar de ir directo al BookingModal.
 - **TrainingModal en modo edicion:** prop `initialTraining?: Training` — si se provee, pre-rellena todos los campos y llama `trainingService.update()` + `trainingService.updateExemptions()` al guardar. Las exenciones se muestran en ambos modos (crear y editar).
 - **`formatTimeInput` en dateHelpers:** `raw.replace(/[^0-9:]/g,'')` → si resultado es exactamente 4 digitos → inserta ':' en posicion 2. Nunca mas de 5 chars. Aplicado en BookingModal (startTime/endTime) y TrainingModal (startTime/endTime).
+- **Logger en controllers:** importar `logger` desde `../lib/logger` (NO desde `../app`). Importar desde `app` genera dependencia circular (app → routes → controllers → app) que deja `logger` como `undefined` en runtime.
 
 ---
 

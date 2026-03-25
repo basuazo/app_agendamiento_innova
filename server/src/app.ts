@@ -5,8 +5,8 @@ import compression from 'compression';
 import path from 'path';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import pino from 'pino';
 import pinoHttp from 'pino-http';
+import logger from './lib/logger';
 
 import prisma from './lib/prisma';
 import authRoutes from './routes/auth.routes';
@@ -33,13 +33,7 @@ if (process.env.JWT_SECRET!.length < 32) {
   process.exit(1);
 }
 
-// ── Logger estructurado ───────────────────────────────────────────────────────
-export const logger = pino({
-  level: process.env.LOG_LEVEL ?? 'info',
-  ...(process.env.NODE_ENV !== 'production' && {
-    transport: { target: 'pino-pretty', options: { colorize: true } },
-  }),
-});
+export { default as logger } from './lib/logger';
 
 // ── App Express ───────────────────────────────────────────────────────────────
 const app = express();

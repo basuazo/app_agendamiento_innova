@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma';
-import { logger } from '../app';
+import logger from '../lib/logger';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {

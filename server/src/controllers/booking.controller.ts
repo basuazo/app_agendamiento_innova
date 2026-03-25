@@ -5,7 +5,7 @@ import prisma from '../lib/prisma';
 import { checkConflict } from '../services/booking.service';
 import { createCalendarEvent, deleteCalendarEvent } from '../services/googleCalendar.service';
 import { logAudit } from '../lib/audit';
-import { logger } from '../app';
+import logger from '../lib/logger';
 
 function fmtDate(d: Date) {
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
