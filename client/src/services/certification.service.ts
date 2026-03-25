@@ -29,4 +29,7 @@ export const certificationService = {
 
   revokeCertification: (id: string) =>
     api.delete(`/admin/certifications/${id}`).then((r) => r.data),
+
+  cancelSession: (requestIds: string[]) =>
+    api.patch('/admin/certifications/cancel-session', { requestIds }).then((r) => r.data),
 };

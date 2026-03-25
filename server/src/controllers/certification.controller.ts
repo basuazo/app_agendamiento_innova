@@ -232,13 +232,13 @@ export const revokeCertification = async (req: AuthRequest, res: Response): Prom
       res.status(404).json({ error: 'Certificación no encontrada' });
       return;
     }
-    // Eliminar cert + solicitud resuelta para que el usuario pueda volver a solicitar
-    await prisma.$transaction([
-      prisma.certification.delete({ where: { id: req.params.id } }),
-      prisma.certificationRequest.deleteMany({
-        where: { userId: cert.userId, categoryId: cert.categoryId },
-      }),
-    ]);
+    // Eliminar cert y dejar la solicitud en estado PENDING para que pueda ser reprogramada
+    await prisma.certification.delete({ where: { id: req.params.id } });
+    await prisma.certificationRequest.upsert({
+      where: { userId_categoryId: { userId: cert.userId, categoryId: cert.categoryId } },
+      create: { userId: cert.userId, categoryId: cert.categoryId, status: 'PENDING' },
+      update: { status: 'PENDING', scheduledDate: null, resolvedAt: null, notes: null },
+    });
 
     await logAudit({
       actorId: req.user!.id,
@@ -251,5 +251,24 @@ export const revokeCertification = async (req: AuthRequest, res: Response): Prom
     res.json({ message: 'Certificación revocada' });
   } catch {
     res.status(500).json({ error: 'Error al revocar certificación' });
+  }
+};
+
+export const cancelCertSession = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { requestIds } = req.body as { requestIds?: string[] };
+    if (!Array.isArray(requestIds) || requestIds.length === 0) {
+      res.status(400).json({ error: 'requestIds es requerido' });
+      return;
+    }
+
+    const result = await prisma.certificationRequest.updateMany({
+      where: { id: { in: requestIds }, status: 'SCHEDULED' },
+      data: { status: 'PENDING', scheduledDate: null },
+    });
+
+    res.json({ message: `${result.count} solicitud(es) devuelta(s) a estado pendiente` });
+  } catch {
+    res.status(500).json({ error: 'Error al cancelar la sesión de certificación' });
   }
 };

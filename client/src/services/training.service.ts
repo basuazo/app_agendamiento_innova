@@ -10,11 +10,22 @@ export interface CreateTrainingDto {
   exemptResourceIds?: string[];
 }
 
+export interface UpdateTrainingDto {
+  title?: string;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
+  capacity?: number;
+}
+
 export const trainingService = {
   getAll: () => api.get<Training[]>('/trainings').then((r) => r.data),
 
   create: (data: CreateTrainingDto) =>
     api.post<Training>('/admin/trainings', data).then((r) => r.data),
+
+  update: (id: string, data: UpdateTrainingDto) =>
+    api.patch<Training>(`/admin/trainings/${id}`, data).then((r) => r.data),
 
   remove: (id: string) => api.delete(`/admin/trainings/${id}`),
 

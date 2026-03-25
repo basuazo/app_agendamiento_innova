@@ -398,6 +398,102 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
   }
 };
 
+export const updateBooking = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { notes, startTime: startRaw, endTime: endRaw, localDate, localStartTime, localEndTime } = req.body;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id },
+      include: BOOKING_INCLUDE,
+    });
+
+    if (!booking) {
+      res.status(404).json({ error: 'Reserva no encontrada' });
+      return;
+    }
+
+    const isElevated = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(req.user!.role);
+    if (!isElevated && booking.userId !== req.user!.id) {
+      res.status(403).json({ error: 'No tienes permiso para editar esta reserva' });
+      return;
+    }
+
+    if (['CANCELLED', 'REJECTED'].includes(booking.status)) {
+      res.status(400).json({ error: 'No se puede editar una reserva cancelada o rechazada' });
+      return;
+    }
+
+    const startTime = startRaw ? new Date(startRaw) : new Date(booking.startTime);
+    const endTime = endRaw ? new Date(endRaw) : new Date(booking.endTime);
+
+    if (endTime <= startTime) {
+      res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio' });
+      return;
+    }
+
+    const durationMs = endTime.getTime() - startTime.getTime();
+    if (durationMs > 4 * 60 * 60 * 1000) {
+      res.status(400).json({ error: 'La reserva no puede durar más de 4 horas' });
+      return;
+    }
+
+    if (startTime < new Date()) {
+      res.status(400).json({ error: 'No se pueden hacer cambios en el pasado' });
+      return;
+    }
+
+    // Obtener resource para validaciones (spaceId, capacity)
+    const resource = await prisma.resource.findUnique({
+      where: { id: booking.resourceId },
+      select: { spaceId: true, capacity: true },
+    });
+
+    if (localDate && localStartTime && localEndTime && resource) {
+      const dayOfWeek = new Date(`${localDate}T12:00:00`).getDay();
+      const bh = await prisma.businessHours.findUnique({
+        where: { spaceId_dayOfWeek: { spaceId: resource.spaceId, dayOfWeek } },
+      });
+      if (bh) {
+        if (!bh.isOpen) {
+          res.status(400).json({ error: 'El espacio no abre ese día' });
+          return;
+        }
+        if (localStartTime < bh.openTime) {
+          res.status(400).json({ error: `El espacio abre a las ${bh.openTime}` });
+          return;
+        }
+        if (localEndTime > bh.closeTime) {
+          res.status(400).json({ error: `El espacio cierra a las ${bh.closeTime}` });
+          return;
+        }
+      }
+    }
+
+    const hasConflict = await checkConflict(
+      booking.resourceId, startTime, endTime, booking.id,
+      booking.quantity, resource?.capacity ?? 1
+    );
+    if (hasConflict) {
+      res.status(409).json({ error: 'El recurso ya está reservado en ese horario. Por favor elige otro horario.' });
+      return;
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: req.params.id },
+      data: {
+        ...(startRaw && { startTime }),
+        ...(endRaw && { endTime }),
+        ...(notes !== undefined && { notes }),
+      },
+      include: BOOKING_INCLUDE,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar la reserva' });
+  }
+};
+
 export const cancelBooking = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const booking = await prisma.booking.findUnique({

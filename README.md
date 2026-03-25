@@ -145,19 +145,20 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 
 ## Features principales
 
-- **Calendario de reservas**: vista semanal. Click en celda para reservar, click en slot ocupado para ver detalle o crear nueva reserva encima. Horario configurable por espacio (BusinessHours). Tiempo libre de hasta 4 horas por reserva.
+- **Calendario interactivo**: vista semanal con FullCalendar. Las actividades que se solapan en el tiempo se agrupan automáticamente en un evento único "N actividades" (cluster); hacer click lo despliega y permite acceder a cada actividad individualmente.
+- **Reservas desde el calendario**: click en celda vacía para crear, click en una reserva para ver detalle; desde el detalle se puede editar (fecha, hora, notas) o cancelar directamente sin salir del calendario.
 - **Validación de horario de negocio**: el formulario de reserva muestra el horario del espacio en tiempo real y bloquea horas fuera del rango configurado, tanto en frontend (feedback inmediato) como en backend (validación de seguridad).
-- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente.
-- **Capacitaciones**: el admin/Líder Técnica crea sesiones de capacitación con cupos configurables. Las usuarias se inscriben directamente desde `/my-trainings` o desde el calendario; si los cupos están llenos, quedan en lista de espera y se promocionan automáticamente al liberarse un cupo. La página `/admin/trainings` muestra el listado completo con las inscritas y su estado (Confirmada / En espera).
+- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente. Al revocar una certificación, la solicitud asociada vuelve a estado PENDIENTE (no se elimina), permitiendo reprogramar sin que el usuario deba solicitarla de nuevo. Desde el popup de sesión de certificación en el calendario, el admin puede cancelar toda la sesión con un clic, revirtiendo todas las solicitudes PROGRAMADAS a PENDIENTE.
+- **Capacitaciones**: el admin/Líder Técnica crea y edita sesiones de capacitación con cupos y horarios configurables (HH:MM). Las usuarias se inscriben desde `/my-trainings` o desde el popup de la capacitación en el calendario. Cupos llenos → lista de espera con promoción automática. Desde el popup del calendario el admin puede editar, eliminar o agendar en el mismo horario (si hay recursos libres por exenciones). La página `/admin/trainings` muestra el listado completo con las inscritas.
 - **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings`, usando un combobox de búsqueda por nombre o email.
-- **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones (nombre, email, estado, fecha).
-- **Sala de reuniones**: auto-selecciona el único recurso disponible, sin selección de máquina ni pregunta de acompañantes. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual para identificar personas externas a la agrupación.
+- **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones.
+- **Sala de reuniones**: auto-selecciona el único recurso disponible. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
 - **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
 - **Roles jerárquicos**: cinco roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA, USER).
-- **Agendar por otra usuaria**: todos los roles elevados (ADMIN, SUPER_ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA) pueden crear reservas a nombre de cualquier usuaria del espacio. El BookingModal muestra un paso previo de selección de usuaria cuando el actor tiene un rol elevado.
-- **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA pueden descargar un archivo `.xlsx` con el detalle completo de las reservas del espacio activo (fecha, horario, recurso, categoría, usuaria, propósito, ítem a producir, cantidad, asistentes, relación de acompañantes, estado y notas).
-- **Aforo configurable**: cada espacio tiene dos límites de personas editables desde la página de Configuración — uno para uso de máquinas (suma de asistentes concurrentes) y otro para la sala de reuniones (límite por reserva). El sistema bloquea reservas que superen el aforo configurado.
+- **Agendar por otra usuaria**: todos los roles elevados pueden crear reservas a nombre de cualquier usuaria del espacio.
+- **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN y LIDER_COMUNITARIA pueden descargar un `.xlsx` con el detalle completo.
+- **Aforo configurable**: cada espacio tiene dos límites editables desde Configuración — uno para máquinas y otro para la sala de reuniones.
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
 ---
@@ -227,6 +228,10 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
 - **Inscripción a capacitaciones**: cupos configurables por sesión. Al llenarse, las siguientes inscripciones van a lista de espera. Al cancelar una inscripción CONFIRMED, la primera en espera se promueve automáticamente a CONFIRMED
 - **Inscripción por roles elevados**: ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA pueden inscribir y desinscribir a otras usuarias en capacitaciones
+- **Edición de reservas**: el propietario de una reserva (o un rol elevado) puede editar fecha/hora/notas directamente desde el detalle en el calendario. No se puede editar si la reserva está CANCELADA o RECHAZADA
+- **Revocación de certificación**: al revocar, la `CertificationRequest` se revierte a PENDING (no se elimina) para que el usuario pueda ser reprogramado sin hacer una nueva solicitud
+- **Cancelar sesión de certificación**: desde el popup del calendario, el admin puede cancelar toda la sesión de golpe; todas las solicitudes SCHEDULED vuelven a PENDING
+- **Agrupación de actividades en el calendario**: cuando dos o más actividades se solapan en el tiempo, se reemplazan por un único evento "N actividades" (algoritmo union-find). Al hacer click se abre un modal que lista todas las actividades con opción de acceder a cada una individualmente
 
 ---
 

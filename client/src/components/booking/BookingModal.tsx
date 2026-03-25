@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { bookingService } from '../../services/booking.service';
 import { certificationService } from '../../services/certification.service';
 import { userService } from '../../services/user.service';
-import { PURPOSE_LABELS } from '../../utils/dateHelpers';
+import { PURPOSE_LABELS, formatTimeInput } from '../../utils/dateHelpers';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -70,9 +70,11 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
     if (preselectedDate) {
       setDate(format(preselectedDate, 'yyyy-MM-dd'));
       const h = preselectedDate.getHours();
+      const m = preselectedDate.getMinutes();
       const clampedH = h >= 9 && h <= 16 ? h : 9;
-      setStartTime(`${String(clampedH).padStart(2, '0')}:00`);
-      setEndTime(`${String(Math.min(clampedH + 1, 17)).padStart(2, '0')}:00`);
+      setStartTime(`${String(clampedH).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+      const endDate = new Date(preselectedDate.getTime() + 60 * 60 * 1000);
+      setEndTime(`${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`);
     }
   }, [preselectedDate]);
 
@@ -523,7 +525,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                     <input
                       type="text"
                       value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
+                      onChange={(e) => setStartTime(formatTimeInput(e.target.value))}
                       placeholder="HH:MM"
                       maxLength={5}
                       className={`${baseInput} ${startOutOfRange ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-brand-500'}`}
@@ -537,7 +539,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
                     <input
                       type="text"
                       value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
+                      onChange={(e) => setEndTime(formatTimeInput(e.target.value))}
                       placeholder="HH:MM"
                       maxLength={5}
                       className={`${baseInput} ${endOutOfRange ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-brand-500'}`}

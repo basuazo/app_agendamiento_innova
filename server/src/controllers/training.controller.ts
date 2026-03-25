@@ -95,6 +95,42 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
+export const updateTraining = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { title, description, startTime: startRaw, endTime: endRaw, capacity: capacityRaw } = req.body;
+
+    const training = await prisma.training.findUnique({ where: { id: req.params.id } });
+    if (!training) {
+      res.status(404).json({ error: 'Capacitación no encontrada' });
+      return;
+    }
+
+    const startTime = startRaw ? new Date(startRaw) : training.startTime;
+    const endTime = endRaw ? new Date(endRaw) : training.endTime;
+
+    if (startTime >= endTime) {
+      res.status(400).json({ error: 'La hora de inicio debe ser anterior a la hora de fin' });
+      return;
+    }
+
+    const updated = await prisma.training.update({
+      where: { id: req.params.id },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description: description || null }),
+        ...(startRaw && { startTime }),
+        ...(endRaw && { endTime }),
+        ...(capacityRaw !== undefined && { capacity: Math.max(1, Number(capacityRaw) || 10) }),
+      },
+      include: TRAINING_INCLUDE,
+    });
+
+    res.json(updated);
+  } catch {
+    res.status(500).json({ error: 'Error al actualizar la capacitación' });
+  }
+};
+
 export const deleteTraining = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const training = await prisma.training.findUnique({ where: { id: req.params.id } });

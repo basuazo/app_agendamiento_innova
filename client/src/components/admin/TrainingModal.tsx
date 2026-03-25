@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Resource } from '../../types';
+import { Resource, Training } from '../../types';
 import { trainingService } from '../../services/training.service';
 import { resourceService } from '../../services/resource.service';
+import { formatTimeInput } from '../../utils/dateHelpers';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -11,16 +12,19 @@ interface Props {
   onSaved: () => void;
   preselectedDate?: Date;
   preselectedHour?: number;
+  initialTraining?: Training; // modo edición
 }
 
-const START_HOURS = Array.from({ length: 8 }, (_, i) => i + 9);  // 9–16
+const isValidTime = (t: string) => /^\d{2}:\d{2}$/.test(t);
 
-export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDate, preselectedHour }: Props) {
+export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDate, preselectedHour, initialTraining }: Props) {
+  const isEditMode = !!initialTraining;
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [startHour, setStartHour] = useState(preselectedHour ?? 9);
-  const [endHour, setEndHour] = useState((preselectedHour ?? 9) + 1);
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
   const [capacity, setCapacity] = useState<string>('10');
   const [exemptIds, setExemptIds] = useState<string[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -32,17 +36,33 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
     }
   }, [isOpen]);
 
+  // Inicializar campos cuando se abre en modo edición
   useEffect(() => {
-    if (preselectedDate) {
-      setDate(format(preselectedDate, 'yyyy-MM-dd'));
+    if (isOpen && initialTraining) {
+      const start = new Date(initialTraining.startTime);
+      const end = new Date(initialTraining.endTime);
+      setTitle(initialTraining.title);
+      setDescription(initialTraining.description ?? '');
+      setDate(format(start, 'yyyy-MM-dd'));
+      setStartTime(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`);
+      setEndTime(`${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`);
+      setCapacity(String(initialTraining.capacity));
+      setExemptIds(initialTraining.exemptions.map((e) => e.resource.id));
+    } else if (isOpen && !initialTraining) {
+      resetForm();
     }
-    if (preselectedHour !== undefined) {
-      setStartHour(preselectedHour);
-      setEndHour(preselectedHour + 1);
-    }
-  }, [preselectedDate, preselectedHour]);
+  }, [isOpen, initialTraining]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const endHours = Array.from({ length: 17 - startHour }, (_, i) => startHour + i + 1);
+  // Preseleccionar fecha/hora al crear nueva
+  useEffect(() => {
+    if (!initialTraining) {
+      if (preselectedDate) setDate(format(preselectedDate, 'yyyy-MM-dd'));
+      if (preselectedHour !== undefined) {
+        setStartTime(`${String(preselectedHour).padStart(2, '0')}:00`);
+        setEndTime(`${String(preselectedHour + 1).padStart(2, '0')}:00`);
+      }
+    }
+  }, [preselectedDate, preselectedHour, initialTraining]);
 
   const toggleExempt = (id: string) => {
     setExemptIds((prev) =>
@@ -56,31 +76,47 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
       toast.error('El título es requerido');
       return;
     }
-    if (endHour <= startHour) {
+    if (!isValidTime(startTime) || !isValidTime(endTime)) {
+      toast.error('Las horas deben estar en formato HH:MM');
+      return;
+    }
+    if (endTime <= startTime) {
       toast.error('La hora de fin debe ser posterior a la hora de inicio');
       return;
     }
 
-    const startTime = new Date(`${date}T${String(startHour).padStart(2, '0')}:00:00`).toISOString();
-    const endTime = new Date(`${date}T${String(endHour).padStart(2, '0')}:00:00`).toISOString();
+    const startIso = new Date(`${date}T${startTime}:00`).toISOString();
+    const endIso = new Date(`${date}T${endTime}:00`).toISOString();
 
     setLoading(true);
     try {
-      await trainingService.create({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        startTime,
-        endTime,
-        capacity: Math.max(1, parseInt(capacity, 10) || 10),
-        exemptResourceIds: exemptIds,
-      });
-      toast.success('Capacitación creada');
+      if (isEditMode && initialTraining) {
+        await trainingService.update(initialTraining.id, {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          startTime: startIso,
+          endTime: endIso,
+          capacity: Math.max(1, parseInt(capacity, 10) || 10),
+        });
+        await trainingService.updateExemptions(initialTraining.id, exemptIds);
+        toast.success('Capacitación actualizada');
+      } else {
+        await trainingService.create({
+          title: title.trim(),
+          description: description.trim() || undefined,
+          startTime: startIso,
+          endTime: endIso,
+          capacity: Math.max(1, parseInt(capacity, 10) || 10),
+          exemptResourceIds: exemptIds,
+        });
+        toast.success('Capacitación creada');
+      }
       onSaved();
       onClose();
       resetForm();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      toast.error(msg ?? 'Error al crear la capacitación');
+      toast.error(msg ?? `Error al ${isEditMode ? 'actualizar' : 'crear'} la capacitación`);
     } finally {
       setLoading(false);
     }
@@ -90,8 +126,8 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
     setTitle('');
     setDescription('');
     setDate(format(new Date(), 'yyyy-MM-dd'));
-    setStartHour(9);
-    setEndHour(10);
+    setStartTime('09:00');
+    setEndTime('10:00');
     setCapacity('10');
     setExemptIds([]);
   };
@@ -106,8 +142,12 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Bloquear para Capacitación</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Bloquea todos los recursos en el horario indicado</p>
+              <h2 className="text-xl font-bold text-gray-900">
+                {isEditMode ? 'Editar Capacitación' : 'Bloquear para Capacitación'}
+              </h2>
+              {!isEditMode && (
+                <p className="text-xs text-gray-500 mt-0.5">Bloquea todos los recursos en el horario indicado</p>
+              )}
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,31 +199,29 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Hora inicio *</label>
-                <select
-                  value={startHour}
-                  onChange={(e) => {
-                    const h = Number(e.target.value);
-                    setStartHour(h);
-                    if (endHour <= h) setEndHour(h + 1);
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  {START_HOURS.map((h) => (
-                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={startTime}
+                  onChange={(e) => setStartTime(formatTimeInput(e.target.value))}
+                  placeholder="HH:MM"
+                  maxLength={5}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+                    startTime && !isValidTime(startTime) ? 'border-red-400' : 'border-gray-300'
+                  }`}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Hora fin *</label>
-                <select
-                  value={endHour}
-                  onChange={(e) => setEndHour(Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  {endHours.map((h) => (
-                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  value={endTime}
+                  onChange={(e) => setEndTime(formatTimeInput(e.target.value))}
+                  placeholder="HH:MM"
+                  maxLength={5}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+                    endTime && (!isValidTime(endTime) || endTime <= startTime) ? 'border-red-400' : 'border-gray-300'
+                  }`}
+                />
               </div>
             </div>
 
@@ -225,12 +263,13 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
               </div>
             )}
 
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <p className="text-xs text-amber-700">
-                <strong>Importante:</strong> Se bloqueará la agenda de todos los recursos en este horario.
-                Los usuarios no podrán hacer reservas durante la capacitación.
-              </p>
-            </div>
+            {!isEditMode && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-700">
+                  <strong>Importante:</strong> Se bloqueará la agenda de todos los recursos no liberados en este horario.
+                </p>
+              </div>
+            )}
 
             <div className="flex gap-3 pt-2">
               <button
@@ -245,7 +284,9 @@ export default function TrainingModal({ isOpen, onClose, onSaved, preselectedDat
                 disabled={loading}
                 className="flex-1 py-2.5 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-60 transition-colors"
               >
-                {loading ? 'Creando...' : 'Crear Capacitación'}
+                {loading
+                  ? isEditMode ? 'Guardando...' : 'Creando...'
+                  : isEditMode ? 'Guardar cambios' : 'Crear Capacitación'}
               </button>
             </div>
           </form>

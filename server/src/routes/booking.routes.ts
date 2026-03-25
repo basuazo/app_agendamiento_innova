@@ -3,6 +3,7 @@ import {
   getAllBookings,
   getMyBookings,
   createBooking,
+  updateBooking,
   cancelBooking,
   approveBooking,
   rejectBooking,
@@ -11,7 +12,7 @@ import {
   exportBookings,
 } from '../controllers/booking.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireAdmin, requireComunitaria } from '../middleware/role.middleware';
+import { requireComunitaria } from '../middleware/role.middleware';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.get('/export', authenticate, requireComunitaria, exportBookings);
 router.get('/', authenticate, getAllBookings);
 router.get('/mine', authenticate, getMyBookings);
 router.post('/', authenticate, createBooking);
+router.patch('/:id', authenticate, updateBooking);
 router.patch('/:id/cancel', authenticate, cancelBooking);
 router.patch('/:id/approve', authenticate, requireComunitaria, approveBooking);
 router.patch('/:id/reject', authenticate, requireComunitaria, rejectBooking);

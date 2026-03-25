@@ -1,6 +1,15 @@
 import api from './api';
 import { Booking, ResourceAvailability } from '../types';
 
+export interface UpdateBookingDto {
+  startTime?: string;
+  endTime?: string;
+  notes?: string;
+  localDate?: string;
+  localStartTime?: string;
+  localEndTime?: string;
+}
+
 export interface CreateBookingDto {
   resourceId: string;
   startTime: string;
@@ -29,6 +38,9 @@ export const bookingService = {
 
   create: (data: CreateBookingDto) =>
     api.post<Booking>('/bookings', data).then((r) => r.data),
+
+  update: (id: string, data: UpdateBookingDto) =>
+    api.patch<Booking>(`/bookings/${id}`, data).then((r) => r.data),
 
   cancel: (id: string) =>
     api.patch<Booking>(`/bookings/${id}/cancel`).then((r) => r.data),

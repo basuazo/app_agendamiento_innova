@@ -9,6 +9,7 @@ import {
   resolveRequest,
   getAllCertifications,
   revokeCertification,
+  cancelCertSession,
 } from '../controllers/certification.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireTecnica } from '../middleware/role.middleware';
@@ -27,5 +28,6 @@ router.patch('/admin/certifications/schedule', authenticate, requireTecnica, sch
 router.patch('/admin/certifications/requests/:id/resolve', authenticate, requireTecnica, resolveRequest);
 router.get('/admin/certifications', authenticate, requireTecnica, getAllCertifications);
 router.delete('/admin/certifications/:id', authenticate, requireTecnica, revokeCertification);
+router.patch('/admin/certifications/cancel-session', authenticate, requireTecnica, cancelCertSession);
 
 export default router;

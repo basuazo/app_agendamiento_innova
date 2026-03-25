@@ -29,6 +29,20 @@ export function toEndTime(startTime: Date): Date {
   return addHours(startTime, 1);
 }
 
+/**
+ * Formatea un input de hora en tiempo real.
+ * - Acepta solo dígitos y ":" (elimina el resto).
+ * - Si el usuario escribe exactamente 4 dígitos (ej. "1700"), inserta ":" → "17:00".
+ * - No permite más de 5 caracteres.
+ */
+export function formatTimeInput(raw: string): string {
+  const cleaned = raw.replace(/[^0-9:]/g, '');
+  if (/^\d{4}$/.test(cleaned)) {
+    return `${cleaned.slice(0, 2)}:${cleaned.slice(2)}`;
+  }
+  return cleaned.slice(0, 5);
+}
+
 export const PURPOSE_LABELS: Record<string, string> = {
   LEARN: 'Aprender',
   PRODUCE: 'Producir',

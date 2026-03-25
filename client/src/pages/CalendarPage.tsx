@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { Training, CertificationRequest, BusinessHours } from '../types';
 import { trainingService } from '../services/training.service';
 import { certificationService } from '../services/certification.service';
+import { bookingService, UpdateBookingDto } from '../services/booking.service';
 import { settingsService } from '../services/settings.service';
 import CalendarView from '../components/calendar/CalendarView';
 import BookingModal from '../components/booking/BookingModal';
@@ -20,6 +21,7 @@ export default function CalendarPage() {
 
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [trainingModalOpen, setTrainingModalOpen] = useState(false);
+  const [editingTraining, setEditingTraining] = useState<Training | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [selectedHour, setSelectedHour] = useState<number | undefined>();
   const [actionChoice, setActionChoice] = useState<{ date: Date } | null>(null);
@@ -32,6 +34,7 @@ export default function CalendarPage() {
   const [enrollLoading, setEnrollLoading] = useState(false);
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
+  const canManageTrainings = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA';
 
   const fetchTrainings = async () => {
     try {
@@ -89,6 +92,7 @@ export default function CalendarPage() {
 
   const handleChooseTraining = () => {
     setActionChoice(null);
+    setEditingTraining(null);
     setTrainingModalOpen(true);
   };
 
@@ -101,6 +105,7 @@ export default function CalendarPage() {
 
   const handleTrainingModalClose = () => {
     setTrainingModalOpen(false);
+    setEditingTraining(null);
     setSelectedDate(undefined);
     setSelectedHour(undefined);
   };
@@ -124,6 +129,12 @@ export default function CalendarPage() {
     } catch {
       toast.error('Error al eliminar la capacitación');
     }
+  };
+
+  const handleEditTraining = (training: Training) => {
+    setSelectedTraining(null);
+    setEditingTraining(training);
+    setTrainingModalOpen(true);
   };
 
   const handleEnroll = async (training: Training) => {
@@ -152,6 +163,25 @@ export default function CalendarPage() {
     }
   };
 
+  // Callbacks para CalendarView
+  const handleCancelBooking = async (id: string) => {
+    await bookingService.cancel(id);
+    toast.success('Reserva cancelada');
+    fetchAll();
+  };
+
+  const handleUpdateBooking = async (id: string, data: UpdateBookingDto) => {
+    await bookingService.update(id, data);
+    toast.success('Reserva actualizada');
+    fetchAll();
+  };
+
+  const handleCancelCertSession = async (requestIds: string[]) => {
+    await certificationService.cancelSession(requestIds);
+    toast.success('Sesión cancelada. Las solicitudes volvieron a pendiente.');
+    fetchCertSessions();
+  };
+
   const calendarReady = !isLoading && hoursLoaded;
 
   return (
@@ -175,9 +205,9 @@ export default function CalendarPage() {
             </svg>
             Nueva Reserva
           </button>
-          {isAdmin && (
+          {canManageTrainings && (
             <button
-              onClick={() => setTrainingModalOpen(true)}
+              onClick={() => { setEditingTraining(null); setTrainingModalOpen(true); }}
               className="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-600 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,9 +256,13 @@ export default function CalendarPage() {
           trainings={trainings}
           certSessions={isAdmin ? certSessions : []}
           isAdmin={isAdmin}
+          currentUserId={user?.id}
           businessHours={businessHours}
           onSlotClick={handleSlotClick}
           onTrainingClick={handleTrainingClick}
+          onCancelBooking={handleCancelBooking}
+          onUpdateBooking={handleUpdateBooking}
+          onCancelCertSession={isAdmin ? handleCancelCertSession : undefined}
         />
       )}
 
@@ -251,12 +285,14 @@ export default function CalendarPage() {
               >
                 Nueva Reserva
               </button>
-              <button
-                onClick={handleChooseTraining}
-                className="w-full py-3 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors"
-              >
-                Bloquear para Capacitación
-              </button>
+              {canManageTrainings && (
+                <button
+                  onClick={handleChooseTraining}
+                  className="w-full py-3 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors"
+                >
+                  Bloquear para Capacitación
+                </button>
+              )}
               <button
                 onClick={() => setActionChoice(null)}
                 className="w-full py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
@@ -281,6 +317,7 @@ export default function CalendarPage() {
         onSaved={handleTrainingSaved}
         preselectedDate={selectedDate}
         preselectedHour={selectedHour}
+        initialTraining={editingTraining ?? undefined}
       />
 
       {/* Modal detalle / inscripción de capacitación */}
@@ -334,7 +371,29 @@ export default function CalendarPage() {
                       {waitlistCount > 0 && <span className="text-amber-600 ml-2">({waitlistCount} en espera)</span>}
                     </span>
                   </div>
+                  {t.exemptions.length > 0 && (
+                    <div className="flex gap-2">
+                      <span className="text-gray-400 w-16 shrink-0">Libres</span>
+                      <span className="font-medium text-green-700">
+                        {t.exemptions.map((e) => e.resource.name).join(', ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Agendar en este horario */}
+                <button
+                  onClick={() => {
+                    setSelectedTraining(null);
+                    handleSlotClick(start);
+                  }}
+                  className="w-full mb-3 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Agendar en este horario
+                </button>
 
                 {/* Lista de inscriptas (solo admin) */}
                 {isAdmin && t.enrollments.length > 0 && (
@@ -353,7 +412,7 @@ export default function CalendarPage() {
                   </div>
                 )}
 
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-2 flex-wrap">
                   {/* Botón inscripción (usuarios y roles elevados si no son SUPER_ADMIN) */}
                   {user?.role !== 'SUPER_ADMIN' && (
                     <button
@@ -379,8 +438,16 @@ export default function CalendarPage() {
                     </button>
                   )}
 
-                  {/* Botón eliminar (solo admin) */}
-                  {isAdmin && (
+                  {/* Botones admin */}
+                  {canManageTrainings && (
+                    <button
+                      onClick={() => handleEditTraining(t)}
+                      className="px-4 py-2.5 border border-brand-300 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 transition-colors"
+                    >
+                      Editar
+                    </button>
+                  )}
+                  {canManageTrainings && (
                     <button
                       onClick={() => setConfirmDeleteTraining(t)}
                       className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"

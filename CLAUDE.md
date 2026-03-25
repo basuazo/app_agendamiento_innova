@@ -354,6 +354,7 @@ GET    /api/bookings               <- reservas del usuario autenticado
 GET    /api/bookings/admin/all     <- todas las reservas (admin + lider_comunitaria)
 GET    /api/bookings/export        <- exportar Excel con todas las reservas (admin + lider_comunitaria)
 POST   /api/bookings               <- crear reserva (cualquier auth; targetUserId solo roles elevados)
+PATCH  /api/bookings/:id           <- editar reserva (propietario o rol elevado; no si CANCELLED/REJECTED)
 PATCH  /api/bookings/:id/approve   <- aprobar (admin + lider_comunitaria)
 PATCH  /api/bookings/:id/reject    <- rechazar (admin + lider_comunitaria)
 PATCH  /api/bookings/:id/cancel    <- cancelar
@@ -364,14 +365,16 @@ POST   /api/certifications/request  <- solicitar certificacion
 GET    /api/admin/certifications/requests <- solicitudes pendientes (admin + lider_tecnica)
 PATCH  /api/admin/certifications/schedule <- programar sesion (admin + lider_tecnica)
 PATCH  /api/admin/certifications/requests/:id/resolve <- resolver (admin + lider_tecnica)
+PATCH  /api/admin/certifications/cancel-session <- cancelar sesion: revierte requestIds[] a PENDING (admin + lider_tecnica)
 GET    /api/admin/certifications    <- todas las certs (admin + lider_tecnica)
-DELETE /api/admin/certifications/:id <- revocar (admin + lider_tecnica)
+DELETE /api/admin/certifications/:id <- revocar cert; la CertificationRequest vuelve a PENDING (no se elimina)
 
 GET      /api/trainings                  <- sesiones de capacitacion con enrollments (cualquier auth)
 POST     /api/trainings/:id/enroll       <- inscribirse (cualquier auth; body {targetUserId?} para roles elevados; si cupo lleno → WAITLIST)
 DELETE   /api/trainings/:id/enroll       <- desinscribirse (cualquier auth; body {targetUserId?} para roles elevados; promueve WAITLIST → CONFIRMED)
 GET      /api/admin/trainings/export     <- exportar Excel con capacitaciones e inscritas (admin + lider_tecnica)
 POST     /api/admin/trainings            <- crear capacitacion (admin + lider_tecnica)
+PATCH    /api/admin/trainings/:id        <- editar capacitacion (admin + lider_tecnica)
 DELETE   /api/admin/trainings/:id        <- eliminar capacitacion (admin + lider_tecnica)
 PATCH    /api/admin/trainings/:id/exemptions <- actualizar exenciones de recursos
 
@@ -401,6 +404,12 @@ GET      /api/health               <- health check con DB
 - **Aforo**: `Space.maxCapacity` limita asistentes totales en reservas de maquinas; `Space.maxCapacityReunion` limita asistentes por reserva de sala. Valores configurables desde SettingsPage. El check en booking.controller distingue slug `ESPACIO_REUNION` vs. el resto. No aplica a ADMIN/SUPER_ADMIN
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
 - No usar mapas estaticos de colores/labels en frontend — usar `r.category?.color` y `r.category?.name`
+- **Edicion de reservas:** `PATCH /api/bookings/:id` valida propiedad (userId == actor o rol elevado), status no CANCELLED/REJECTED, duracion <= 4h, no en el pasado, horario de negocio y conflictos (con `excludeBookingId`). Solo actualiza startTime/endTime/notes; status/resource/purpose no son editables.
+- **Revocacion de certificacion:** `DELETE /admin/certifications/:id` ya no borra la `CertificationRequest`. En su lugar hace `upsert` con status PENDING, scheduledDate null, resolvedAt null, notes null. Esto permite que el admin reprograme la sesion sin que el usuario deba hacer una nueva solicitud.
+- **Cancelar sesion de certificacion:** `PATCH /admin/certifications/cancel-session` recibe `{ requestIds: string[] }` y revierte todas las solicitudes SCHEDULED a PENDING. No usa ruta dinamica `/:id` — usa metodo PATCH en ruta estatica para no colisionar con `DELETE /:id`.
+- **Agrupacion de actividades en CalendarView (union-find):** `clusterVisibleEvents()` en `CalendarView.tsx` usa algoritmo union-find para detectar grupos de eventos que se solapan (`sA < eB && eA > sB`). Grupos de 1 → evento original; grupos de 2+ → evento cluster slate `#475569` con label "N actividades". Los `trainingBgEvents` (display:'background') se excluyen del clustering. El `handleDateClick` tambien usa la misma logica para detectar actividades al hacer click y abrir el `clusterModal` en lugar de ir directo al BookingModal.
+- **TrainingModal en modo edicion:** prop `initialTraining?: Training` — si se provee, pre-rellena todos los campos y llama `trainingService.update()` + `trainingService.updateExemptions()` al guardar. Las exenciones se muestran en ambos modos (crear y editar).
+- **`formatTimeInput` en dateHelpers:** `raw.replace(/[^0-9:]/g,'')` → si resultado es exactamente 4 digitos → inserta ':' en posicion 2. Nunca mas de 5 chars. Aplicado en BookingModal (startTime/endTime) y TrainingModal (startTime/endTime).
 
 ---
 
@@ -574,6 +583,39 @@ GET      /api/health               <- health check con DB
 - Validacion al enviar: bloquea si dia cerrado, si startTime < openTime, o si endTime > closeTime
 - **Backend (`booking.controller.ts`)**: recibe `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) en el body del POST. Usa `new Date(localDate + 'T12:00:00').getDay()` para el dayOfWeek. Consulta `BusinessHours` via `prisma.businessHours.findUnique({ where: { spaceId_dayOfWeek } })`. Comparacion de HH:MM como strings lexicograficas (ej. `"14:00" > "09:00"`) funciona correctamente y sin problemas de zona horaria
 - `CreateBookingDto` en `booking.service.ts` incluye los tres campos opcionales `localDate?`, `localStartTime?`, `localEndTime?`
+
+### Feature: Edicion y cancelacion de reservas desde el calendario
+- `PATCH /api/bookings/:id` — valida propiedad, status, duracion, horario de negocio y conflictos (`excludeBookingId`)
+- `CalendarView.tsx`: modal de detalle de reserva con boton "Editar" → formulario inline (fecha, hora inicio/fin, notas) + boton "Cancelar reserva" con confirmacion
+- Solo visible si `canEdit` (propietario o rol elevado) y status no CANCELLED/REJECTED
+- Callbacks `onUpdateBooking` y `onCancelBooking` son Promises; errores se muestran inline en el modal
+- `bookingService.update(id, data: UpdateBookingDto)` en el cliente
+
+### Feature: Edicion de capacitaciones desde el calendario
+- `PATCH /api/admin/trainings/:id` — actualiza title, description, startTime, endTime, capacity
+- `TrainingModal` acepta `initialTraining?: Training` para modo edicion; pre-rellena todos los campos incluyendo exenciones; llama `update()` + `updateExemptions()`
+- Exenciones (recursos libres) ahora son visibles y editables tanto al crear como al editar
+- Boton "Editar" en el popup de detalle de capacitacion en CalendarPage (solo `canManageTrainings`)
+
+### Feature: Auto-formato de inputs de hora (1700 → 17:00)
+- `formatTimeInput(raw)` en `dateHelpers.ts`: elimina caracteres no numericos/colon; si resultado es exactamente 4 digitos, inserta ':' entre pos 2 y 3; nunca mas de 5 chars
+- Aplicado en los `onChange` de startTime/endTime en `BookingModal` y `TrainingModal`
+
+### Feature: Reversion de certificacion a PENDING al revocar
+- `DELETE /admin/certifications/:id` ya no elimina la `CertificationRequest`; hace `upsert` con `{ status: PENDING, scheduledDate: null, resolvedAt: null, notes: null }`
+- El usuario aparece en la tab "Solicitudes" del panel de certificaciones y puede ser reprogramado sin hacer una nueva solicitud
+
+### Feature: Cancelar sesion de certificacion desde el calendario
+- `PATCH /admin/certifications/cancel-session` recibe `{ requestIds: string[] }` — revierte todas las solicitudes a PENDING
+- Boton "Cancelar sesion" en el popup de sesion de certificacion en `CalendarView` (solo `isAdmin && onCancelCertSession`)
+
+### Feature: Agrupacion de actividades solapadas en el calendario (clustering)
+- `clusterVisibleEvents(events: VisibleFCEvent[])` en `CalendarView.tsx` — algoritmo union-find (DSU) para detectar grupos de eventos solapados
+- Grupos de 1 → evento original sin cambios; grupos de 2+ → un unico evento cluster slate `#475569` con texto "N actividades" y lista de nombres
+- Solo se agrupan eventos visibles (bookings, training labels, cert sessions). Los `trainingBgEvents` (display:'background') nunca entran al clustering
+- Click en cluster → `clusterModal`: lista de actividades con punto de color, nombre, tipo y horario; click en item → detail modal individual
+- `handleDateClick` tambien detecta actividades en la celda clicada y abre `clusterModal` si las hay, en lugar de ir directo al BookingModal
+- `slotModal` fue eliminado completamente y reemplazado por `clusterModal`
 
 ---
 
