@@ -73,6 +73,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    if (user.deletedAt) {
+      res.status(403).json({ error: 'Esta cuenta ha sido eliminada.' });
+      return;
+    }
+
     if (!user.isVerified) {
       res.status(403).json({ error: 'Tu cuenta está pendiente de verificación por el administrador.' });
       return;

@@ -102,6 +102,7 @@ model User {
   role             Role      @default(USER)
   isVerified       Boolean   @default(false)
   spaceId          String?   // null para SUPER_ADMIN
+  deletedAt        DateTime? // soft delete: null = activo, fecha = eliminado
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

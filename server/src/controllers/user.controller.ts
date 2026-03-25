@@ -12,16 +12,17 @@ export const getUsers = async (req: AuthRequest, res: Response): Promise<void> =
 
     const spaceId = resolveSpaceId(req);
     const spaceFilter = spaceId ? { spaceId } : {};
+    const baseWhere = { ...spaceFilter, deletedAt: null };
 
     const [users, total] = await prisma.$transaction([
       prisma.user.findMany({
-        where: spaceFilter,
+        where: baseWhere,
         select: { id: true, name: true, email: true, organization: true, role: true, isVerified: true, spaceId: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
-      prisma.user.count({ where: spaceFilter }),
+      prisma.user.count({ where: baseWhere }),
     ]);
 
     res.json({ data: users, total, page, limit, pages: Math.ceil(total / limit) });
@@ -87,13 +88,13 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
-    // Cancelar reservas activas del usuario antes de eliminar
+    // Cancelar reservas activas antes de marcar como eliminado
     await prisma.booking.updateMany({
-      where: { userId: id, status: 'CONFIRMED' },
+      where: { userId: id, status: { in: ['PENDING', 'CONFIRMED'] } },
       data: { status: 'CANCELLED' },
     });
 
-    await prisma.user.delete({ where: { id } });
+    await prisma.user.update({ where: { id }, data: { deletedAt: new Date() } });
 
     await logAudit({
       actorId: req.user!.id,
