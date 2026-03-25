@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store/authStore';
+import { useBrandingStore } from './store/brandingStore';
+import { settingsService } from './services/settings.service';
+import { applyBrandColors } from './utils/colorHelpers';
 
 import Navbar from './components/shared/Navbar';
 import ProtectedRoute from './components/shared/ProtectedRoute';
@@ -22,8 +25,9 @@ const CertificationsPage = lazy(() => import('./pages/admin/CertificationsPage')
 const SettingsPage       = lazy(() => import('./pages/admin/SettingsPage'));
 const CategoriesPage     = lazy(() => import('./pages/admin/CategoriesPage'));
 const SpacesPage         = lazy(() => import('./pages/superadmin/SpacesPage'));
-const TrainingsPage      = lazy(() => import('./pages/admin/TrainingsPage'));
-const MyTrainingsPage    = lazy(() => import('./pages/MyTrainingsPage'));
+const TrainingsPage       = lazy(() => import('./pages/admin/TrainingsPage'));
+const MyTrainingsPage     = lazy(() => import('./pages/MyTrainingsPage'));
+const CustomizationPage   = lazy(() => import('./pages/admin/CustomizationPage'));
 
 function PageLoader() {
   return (
@@ -43,11 +47,24 @@ function Layout({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
-  const { loadUser, isLoading } = useAuthStore();
+  const { loadUser, isLoading, user, currentSpaceId } = useAuthStore();
+  const setBranding = useBrandingStore((s) => s.set);
+  const resetBranding = useBrandingStore((s) => s.reset);
 
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  // Cargar personalización del espacio activo y aplicar colores
+  useEffect(() => {
+    if (!user) { resetBranding(); applyBrandColors(null); return; }
+    settingsService.getCustomization()
+      .then((data) => {
+        setBranding(data);
+        applyBrandColors(data.primaryColor);
+      })
+      .catch(() => { applyBrandColors(null); });
+  }, [user?.id, currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) {
     return (
@@ -132,6 +149,11 @@ export default function App() {
           <Route path="/admin/trainings" element={
             <ProtectedRoute adminOnly>
               <Layout><TrainingsPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/customization" element={
+            <ProtectedRoute adminOnly>
+              <Layout><CustomizationPage /></Layout>
             </ProtectedRoute>
           } />
 

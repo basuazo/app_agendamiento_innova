@@ -2,6 +2,14 @@ import { Response } from 'express';
 import prisma from '../lib/prisma';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 
+function slugifySpaceName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // eliminar tildes
+    .replace(/[^a-z0-9]/g, '');      // eliminar espacios y caracteres especiales
+}
+
 export const getBusinessHours = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const spaceId = resolveSpaceId(req);
@@ -80,5 +88,42 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
     });
   } catch {
     res.status(500).json({ error: 'Error al actualizar horarios' });
+  }
+};
+
+export const getCustomization = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) { res.status(400).json({ error: 'Se requiere contexto de espacio' }); return; }
+    const space = await prisma.space.findUnique({
+      where: { id: spaceId },
+      select: { name: true, primaryColor: true },
+    });
+    const slug = space ? slugifySpaceName(space.name) : null;
+    const logoUrl = slug ? `/logo-${slug}.png` : null;
+    res.json({ logoUrl, primaryColor: space?.primaryColor ?? null });
+  } catch {
+    res.status(500).json({ error: 'Error al obtener personalización' });
+  }
+};
+
+export const updateCustomizationColors = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const spaceId = resolveSpaceId(req);
+    if (!spaceId) { res.status(400).json({ error: 'Se requiere contexto de espacio' }); return; }
+    const { primaryColor } = req.body as { primaryColor?: string | null };
+    if (primaryColor && !/^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
+      res.status(400).json({ error: 'Color inválido (debe ser #RRGGBB)' }); return;
+    }
+    const space = await prisma.space.update({
+      where: { id: spaceId },
+      data: { primaryColor: primaryColor ?? null },
+      select: { name: true, primaryColor: true },
+    });
+    const slug = slugifySpaceName(space.name);
+    const logoUrl = `/logo-${slug}.png`;
+    res.json({ logoUrl, primaryColor: space.primaryColor ?? null });
+  } catch {
+    res.status(500).json({ error: 'Error al actualizar color' });
   }
 };

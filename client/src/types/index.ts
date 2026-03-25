@@ -21,8 +21,15 @@ export interface Space {
   id: string;
   name: string;
   isActive: boolean;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SpaceCustomization {
+  logoUrl: string | null;
+  primaryColor: string | null;
 }
 
 export interface User {

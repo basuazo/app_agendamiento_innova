@@ -1,5 +1,5 @@
 import api from './api';
-import { BusinessHours, SpaceSettings } from '../types';
+import { BusinessHours, SpaceCustomization, SpaceSettings } from '../types';
 
 export const settingsService = {
   getBusinessHours: async (): Promise<SpaceSettings> => {
@@ -15,4 +15,15 @@ export const settingsService = {
     const res = await api.put<SpaceSettings>('/settings/business-hours', { days, maxCapacity, maxCapacityReunion });
     return res.data;
   },
+
+  getCustomization: async (): Promise<SpaceCustomization> => {
+    const res = await api.get<SpaceCustomization>('/settings/customization');
+    return res.data;
+  },
+
+  updateColors: async (primaryColor: string | null): Promise<SpaceCustomization> => {
+    const res = await api.put<SpaceCustomization>('/settings/customization/colors', { primaryColor });
+    return res.data;
+  },
+
 };

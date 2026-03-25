@@ -163,6 +163,22 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 
 ---
 
+## Seguridad y producción
+
+- **Helmet** — headers HTTP seguros (X-Frame-Options, HSTS, etc.)
+- **Compresión HTTP** — middleware `compression` (gzip/brotli) en todas las respuestas
+- **Rate limiting** — 10 intentos / 15 min en login y registro
+- **CORS** restringido a `CLIENT_URL`; body limit 1 MB
+- **JWT** con validación de secret ≥ 32 chars en startup; bcrypt salt 10
+- **Logs estructurados** — pino JSON en producción, pretty en desarrollo; todos los errores de controllers usan `logger.error`
+- **Graceful shutdown** — SIGTERM/SIGINT cierran el servidor y desconectan la BD
+- **Health check** — `GET /api/health` verifica conexión a BD (usado por Render)
+- **SPA fallback** — Express sirve `index.html` para todas las rutas no-API en producción
+- **Favicon** real en `/favicon.svg`; `noindex/nofollow` en `index.html` (app privada)
+- **Seed protegido** — aborta con error si `NODE_ENV === 'production'`
+
+---
+
 ## Scripts disponibles
 
 | Comando | Descripción |

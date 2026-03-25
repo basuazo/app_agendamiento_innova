@@ -56,6 +56,7 @@ App para reservas/
 │       ├── app.ts                   <- entry point Express
 │       ├── lib/
 │       │   ├── prisma.ts            <- instancia Prisma singleton
+│       │   ├── logger.ts            <- instancia pino singleton (importar desde aqui, NO desde app.ts)
 │       │   └── audit.ts             <- helper logAudit()
 │       ├── middleware/
 │       │   ├── auth.middleware.ts   <- verifica JWT + resolveSpaceId()
@@ -410,7 +411,8 @@ GET      /api/health               <- health check con DB
 - **Agrupacion de actividades en CalendarView (union-find):** `clusterVisibleEvents()` en `CalendarView.tsx` usa algoritmo union-find para detectar grupos de eventos que se solapan (`sA < eB && eA > sB`). Grupos de 1 → evento original; grupos de 2+ → evento cluster slate `#475569` con label "N actividades". Los `trainingBgEvents` (display:'background') se excluyen del clustering. El `handleDateClick` tambien usa la misma logica para detectar actividades al hacer click y abrir el `clusterModal` en lugar de ir directo al BookingModal.
 - **TrainingModal en modo edicion:** prop `initialTraining?: Training` — si se provee, pre-rellena todos los campos y llama `trainingService.update()` + `trainingService.updateExemptions()` al guardar. Las exenciones se muestran en ambos modos (crear y editar).
 - **`formatTimeInput` en dateHelpers:** `raw.replace(/[^0-9:]/g,'')` → si resultado es exactamente 4 digitos → inserta ':' en posicion 2. Nunca mas de 5 chars. Aplicado en BookingModal (startTime/endTime) y TrainingModal (startTime/endTime).
-- **Logger en controllers:** importar `logger` desde `../lib/logger` (NO desde `../app`). Importar desde `app` genera dependencia circular (app → routes → controllers → app) que deja `logger` como `undefined` en runtime.
+- **Logger en controllers:** importar `logger` desde `../lib/logger` (NO desde `../app`). Importar desde `app` genera dependencia circular (app → routes → controllers → app) que deja `logger` como `undefined` en runtime y crashea el servidor.
+- **pino-pretty en devDependencies:** esta en `devDependencies` de `server/package.json`. Al hacer `npm uninstall pino-pretty --save` se elimina de `node_modules` aunque sea devDep; si ocurre, reinstalar con `npm install --save-dev pino-pretty` desde `/server/`. En produccion (Render) el `.npmrc` con `production=false` garantiza que se instale igual.
 
 ---
 
@@ -420,10 +422,12 @@ GET      /api/health               <- health check con DB
 - Helmet (headers HTTP seguros)
 - Rate limiting en auth: 10 intentos / 15 min
 - Graceful shutdown (SIGTERM/SIGINT)
-- Pino logger estructurado (pretty en dev, JSON en prod)
+- Pino logger estructurado (pretty en dev, JSON en prod) — instancia en `lib/logger.ts`
+- Compresion HTTP gzip/brotli (`compression` middleware, antes de helmet en `app.ts`)
 - Body limit 1mb
 - Health check con ping a DB
 - Error handler global (mensaje generico en prod)
+- Logs estructurados en controllers: todos los `catch` usan `logger.error({ err }, 'msg')` via `lib/logger`
 - SPA fallback para react-router en prod
 - Prisma con logging segun NODE_ENV
 - Indexes en BD: Booking (userId, resourceId, status, startTime+endTime), CertificationRequest (userId, status)
@@ -432,6 +436,9 @@ GET      /api/health               <- health check con DB
 - Timeout 15s en axios
 - `getApiError()` helper para mensajes de error consistentes
 - `ConfirmModal` reutilizable con variantes danger / warning / success
+- Favicon SVG real en `client/public/favicon.svg` (evita 404 en cada pagina)
+- `<meta name="robots" content="noindex, nofollow">` en index.html (app privada)
+- Guard en seed: `process.exit(1)` si `NODE_ENV === 'production'`
 
 ### Feature: Multi-espacio (rama feature/multi-espacio)
 - Modelo `Space` agrupa categorias, recursos, usuarios, trainings, comentarios y horarios

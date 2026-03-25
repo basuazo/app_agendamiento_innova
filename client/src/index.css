@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-50: #f0f9ff;
+  --brand-100: #e0f2fe;
+  --brand-500: #0ea5e9;
+  --brand-600: #0284c7;
+  --brand-700: #0369a1;
+}
+
 /* FullCalendar customización */
 .fc .fc-toolbar-title {
   font-size: 1rem;
@@ -9,21 +17,21 @@
 }
 
 .fc .fc-button {
-  background-color: #0284c7 !important;
-  border-color: #0284c7 !important;
+  background-color: var(--brand-600) !important;
+  border-color: var(--brand-600) !important;
   font-size: 0.75rem !important;
   padding: 0.3rem 0.75rem !important;
   border-radius: 0.5rem !important;
 }
 
 .fc .fc-button:hover {
-  background-color: #0369a1 !important;
-  border-color: #0369a1 !important;
+  background-color: var(--brand-700) !important;
+  border-color: var(--brand-700) !important;
 }
 
 .fc .fc-button-active {
-  background-color: #0369a1 !important;
-  border-color: #0369a1 !important;
+  background-color: var(--brand-700) !important;
+  border-color: var(--brand-700) !important;
 }
 
 .fc .fc-event {
