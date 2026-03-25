@@ -625,6 +625,20 @@ GET      /api/health               <- health check con DB
 - `handleDateClick` tambien detecta actividades en la celda clicada y abre `clusterModal` si las hay, en lugar de ir directo al BookingModal
 - `slotModal` fue eliminado completamente y reemplazado por `clusterModal`
 
+### Feature: Personalizacion de marca por espacio
+- Campos `logoUrl String?` y `primaryColor String?` agregados al modelo `Space` (migracion `20260325032135_add_space_customization`)
+- **Color primario:** almacenado en BD, editable desde `/admin/customization` (solo ADMIN y SUPER_ADMIN). Se aplica como CSS variables (`--brand-50/100/500/600/700`) sobre `document.documentElement` al cargar la app. Tailwind usa estas variables en lugar de valores hardcodeados. FullCalendar tambien usa `var(--brand-600/700)` en `index.css`.
+- **Logo:** se deriva automaticamente del nombre del espacio via `slugifySpaceName()` en el backend → `logo-{slug}.png`. Ejemplo: "Puente Alto" → `/logo-puentealto.png`. El archivo debe existir en `client/public/` (Vite lo copia a `server/public/` durante el build). No hay upload en runtime — es un archivo estatico commitado al repo.
+- `slugifySpaceName(name)` en `settings.controller.ts`: lowercase + NFD + elimina tildes (`\u0300-\u036f`) + elimina no-alphanumericos
+- `generateBrandPalette(hex)` en `client/src/utils/colorHelpers.ts`: convierte hex a HSL, genera 5 tonos con lightness fija (97/93/50/40/30%)
+- `applyBrandColors(hex | null)` en `colorHelpers.ts`: aplica la paleta (o defaults) sobre `document.documentElement.style`
+- `useBrandingStore` en `client/src/store/brandingStore.ts`: Zustand store con `logoUrl` y `primaryColor`
+- `App.tsx` carga la personalizacion en `useEffect([user?.id, currentSpaceId])` y llama `applyBrandColors`
+- Navbar: `src={logoUrl ?? '/logo.png'}` — sin prefijo de API ya que el logo es estatico
+- Tamano recomendado para logos: PNG cuadrado 180×180px, fondo transparente, maximo ~50KB
+- `GET /api/settings/customization` — publica para cualquier usuario autenticado; devuelve `{ logoUrl, primaryColor }`
+- `PUT /api/settings/customization/colors` — requiere `requireAdmin`; actualiza `primaryColor` y retorna `logoUrl` calculado
+
 ---
 
 ## Credenciales del seed
@@ -657,6 +671,8 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **Seed con dotenv override:** `server/prisma/seed.ts` carga dotenv con `override: true` apuntando a `server/.env`. Si `DATABASE_URL` existe como var de entorno del sistema (ej. apuntando a localhost), se sobreescribe con el valor del `.env`. El script ya no usa `-r dotenv/config`.
 - **Neon connection string:** requiere `?sslmode=require` (y opcionalmente `&channel_binding=require`). Sin esto Prisma no conecta en produccion.
 - **Inputs numericos en formularios:** usar `useState<string>` (no `number`) para cualquier input numerico que el usuario deba poder borrar completamente. Parsear con `parseInt(val, 10) || fallback` solo al enviar/guardar. Ver `reunionAttendees`, `produceQty`, `companionCount`, `capacity` (TrainingModal), `maxCapacity` (SettingsPage).
+- **brand colors en Tailwind:** usan CSS variables (`var(--brand-50)` etc.) definidas en `index.css` con valores por defecto sky-blue. Se sobreescriben dinamicamente via `applyBrandColors()`. No usar valores hexadecimales hardcodeados para brand colors — usar siempre las clases `bg-brand-*`, `text-brand-*`. Tampoco usar modificadores de opacidad sobre brand colors (ej. `bg-brand-500/50`) porque CSS variables no se descomponen en canales RGB para Tailwind.
+- **Logo de espacio:** archivo estatico en `client/public/logo-{slug}.png`. `slug` = nombre del espacio en minusculas, sin tildes, sin espacios ni caracteres especiales (usar `slugifySpaceName` como referencia). Tamano recomendado 180x180px PNG. El backend calcula y retorna el `logoUrl` en `getCustomization`; el campo `logoUrl` en la tabla `Space` existe pero no se usa (el valor se computa desde `name`).
 - **Inputs de hora:** usar `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`. No usar `type="time"` — el browser controla la edicion segmento a segmento y no permite borrar todo el valor. Validar con regex `/^\d{2}:\d{2}$/` antes de parsear. Comparacion de horarios HH:MM como strings lexicograficas funciona correctamente.
 - **Validacion de horario de negocio sin timezone:** pasar `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) como campos adicionales en el body de creacion de reserva. El backend usa estos valores directamente contra `BusinessHours.openTime`/`closeTime` sin conversion de zona horaria. En el frontend, `new Date(date + 'T12:00:00').getDay()` para obtener el dia de la semana evita desfase UTC.
 - **Rutas estaticas antes de dinamicas en Express:** `/admin/trainings/export` debe declararse ANTES de `/admin/trainings/:id` para que Express no interprete "export" como un ID de capacitacion.

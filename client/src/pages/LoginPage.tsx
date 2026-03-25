@@ -77,12 +77,20 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          ¿No tienes cuenta?{' '}
-          <Link to="/register" className="text-brand-600 font-medium hover:underline">
+        <div className="mt-6">
+          <div className="relative flex items-center justify-center mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200" />
+            </div>
+            <span className="relative bg-white px-3 text-xs text-gray-400">¿Primera vez?</span>
+          </div>
+          <Link
+            to="/register"
+            className="block w-full py-2.5 bg-red-600 text-white rounded-lg font-medium text-center hover:bg-red-700 transition-colors"
+          >
             Regístrate
           </Link>
-        </p>
+        </div>
       </div>
     </div>
   );

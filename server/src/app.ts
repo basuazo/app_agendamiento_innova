@@ -39,6 +39,9 @@ export { default as logger } from './lib/logger';
 const app = express();
 const PORT = process.env.PORT ?? 3001;
 
+// Confiar en el proxy de Render para obtener la IP real del cliente
+app.set('trust proxy', 1);
+
 // Compresión HTTP (gzip/brotli)
 app.use(compression());
 
@@ -64,7 +67,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   message: { error: 'Demasiados intentos. Intente nuevamente en 15 minutos.' },
   standardHeaders: true,
   legacyHeaders: false,

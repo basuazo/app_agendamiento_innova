@@ -1,18 +1,90 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useBookingStore } from '../store/bookingStore';
 import { useResourceStore } from '../store/resourceStore';
 import { useAuthStore } from '../store/authStore';
-import { Training, CertificationRequest, BusinessHours } from '../types';
+import { Training, CertificationRequest, BusinessHours, User } from '../types';
 import { trainingService } from '../services/training.service';
 import { certificationService } from '../services/certification.service';
 import { bookingService, UpdateBookingDto } from '../services/booking.service';
 import { settingsService } from '../services/settings.service';
+import { userService } from '../services/user.service';
 import CalendarView from '../components/calendar/CalendarView';
 import BookingModal from '../components/booking/BookingModal';
 import TrainingModal from '../components/admin/TrainingModal';
 import ConfirmModal from '../components/shared/ConfirmModal';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
+
+// Combobox de búsqueda de usuarias (para inscripción por roles elevados)
+function UserCombobox({
+  users,
+  value,
+  onSelect,
+}: {
+  users: User[];
+  value: string;
+  onSelect: (userId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedUser = users.find((u) => u.id === value);
+  const inputValue = open ? query : (selectedUser ? `${selectedUser.name} (${selectedUser.email})` : query);
+
+  const filtered = users.filter((u) => {
+    const q = query.toLowerCase();
+    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  const handleSelect = (u: User) => {
+    onSelect(u.id);
+    setQuery('');
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative flex-1">
+      <input
+        type="text"
+        value={inputValue}
+        onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); if (!e.target.value) onSelect(''); }}
+        onFocus={() => { setQuery(''); setOpen(true); }}
+        placeholder="Buscar por nombre o email..."
+        className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+      />
+      {open && (
+        <ul className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-xs text-gray-400">Sin resultados</li>
+          ) : (
+            filtered.map((u) => (
+              <li
+                key={u.id}
+                onMouseDown={() => handleSelect(u)}
+                className="px-3 py-2 cursor-pointer hover:bg-amber-50 text-sm"
+              >
+                <span className="font-medium text-gray-800">{u.name}</span>
+                <span className="text-gray-400 text-xs ml-1">({u.email})</span>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function CalendarPage() {
   const { user, currentSpaceId } = useAuthStore();
@@ -32,6 +104,8 @@ export default function CalendarPage() {
   const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [confirmDeleteTraining, setConfirmDeleteTraining] = useState<Training | null>(null);
   const [enrollLoading, setEnrollLoading] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [enrollTargetId, setEnrollTargetId] = useState('');
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
   const canManageTrainings = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA';
@@ -40,6 +114,8 @@ export default function CalendarPage() {
     try {
       const data = await trainingService.getAll();
       setTrainings(data);
+      // Mantiene el modal de detalle sincronizado con los datos frescos
+      setSelectedTraining((prev) => prev ? (data.find((t) => t.id === prev.id) ?? null) : null);
     } catch {
       // silent
     }
@@ -73,6 +149,9 @@ export default function CalendarPage() {
     fetchTrainings();
     fetchCertSessions();
     fetchBusinessHours();
+    if (isAdmin) {
+      userService.getAll().then(setUsers).catch(() => {});
+    }
   }, [fetchAll, fetchResources, currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSlotClick = (date: Date) => {
@@ -115,7 +194,38 @@ export default function CalendarPage() {
   };
 
   const handleTrainingClick = (training: Training) => {
+    setEnrollTargetId('');
     setSelectedTraining(training);
+  };
+
+  const handleEnrollFor = async (training: Training, targetUserId: string) => {
+    setEnrollLoading(true);
+    try {
+      await trainingService.enroll(training.id, targetUserId);
+      const confirmedCount = training.enrollments.filter((e) => e.status === 'CONFIRMED').length;
+      toast.success(confirmedCount >= training.capacity ? 'Agregada a lista de espera' : 'Inscripción confirmada');
+      setEnrollTargetId('');
+      fetchTrainings();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al inscribir');
+    } finally {
+      setEnrollLoading(false);
+    }
+  };
+
+  const handleUnenrollFor = async (training: Training, targetUserId: string) => {
+    setEnrollLoading(true);
+    try {
+      await trainingService.unenroll(training.id, targetUserId);
+      toast.success('Inscripción cancelada');
+      fetchTrainings();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al cancelar inscripción');
+    } finally {
+      setEnrollLoading(false);
+    }
   };
 
   const handleDeleteTraining = async () => {
@@ -396,18 +506,49 @@ export default function CalendarPage() {
                 </button>
 
                 {/* Lista de inscriptas (solo admin) */}
-                {isAdmin && t.enrollments.length > 0 && (
+                {isAdmin && (
                   <div className="mb-4">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Inscritas</p>
-                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                      {t.enrollments.map((e) => (
-                        <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                          <span className="text-gray-800">{e.user.name}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
-                          </span>
-                        </div>
-                      ))}
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      Inscritas {t.enrollments.length > 0 && `(${t.enrollments.length})`}
+                    </p>
+                    {t.enrollments.length > 0 && (
+                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto mb-3">
+                        {t.enrollments.map((e) => (
+                          <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                            <span className="text-gray-800 truncate mr-2">{e.user.name}</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
+                              </span>
+                              <button
+                                onClick={() => handleUnenrollFor(t, e.userId)}
+                                disabled={enrollLoading}
+                                className="text-gray-400 hover:text-red-500 transition-colors disabled:opacity-40"
+                                title="Cancelar inscripción"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Inscribir otra usuaria */}
+                    <div className="flex gap-2 items-center">
+                      <UserCombobox
+                        users={users.filter((u) => !t.enrollments.some((e) => e.userId === u.id))}
+                        value={enrollTargetId}
+                        onSelect={setEnrollTargetId}
+                      />
+                      <button
+                        onClick={() => handleEnrollFor(t, enrollTargetId)}
+                        disabled={!enrollTargetId || enrollLoading}
+                        className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 disabled:opacity-60 transition-colors shrink-0"
+                      >
+                        Inscribir
+                      </button>
                     </div>
                   </div>
                 )}

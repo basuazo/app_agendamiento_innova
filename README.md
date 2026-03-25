@@ -159,6 +159,7 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Agendar por otra usuaria**: todos los roles elevados pueden crear reservas a nombre de cualquier usuaria del espacio.
 - **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN y LIDER_COMUNITARIA pueden descargar un `.xlsx` con el detalle completo.
 - **Aforo configurable**: cada espacio tiene dos límites editables desde Configuración — uno para máquinas y otro para la sala de reuniones.
+- **Personalización por espacio**: desde `/admin/customization`, ADMIN y SUPER_ADMIN pueden configurar el color principal de la interfaz (botones, enlaces, indicadores). El logo se carga automáticamente desde un archivo estático en `client/public/` con el nombre normalizado del espacio (ej. `logo-puentealto.png`).
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
 ---
@@ -219,7 +220,8 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 │       │   ├── MyTrainingsPage.tsx  # inscripciones del usuario
 │       │   └── MyCertificationsPage.tsx
 │       ├── components/shared/  # Navbar, ConfirmModal, SortableHeader, etc.
-│       └── store/           # Zustand: authStore, bookingStore, resourceStore
+│       ├── store/           # Zustand: authStore, bookingStore, resourceStore, brandingStore
+│       └── utils/           # dateHelpers, apiError, colorHelpers (generación de paleta de colores)
 ├── server/          # Express API
 │   └── src/
 │       ├── controllers/
@@ -248,6 +250,7 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - **Revocación de certificación**: al revocar, la `CertificationRequest` se revierte a PENDING (no se elimina) para que el usuario pueda ser reprogramado sin hacer una nueva solicitud
 - **Cancelar sesión de certificación**: desde el popup del calendario, el admin puede cancelar toda la sesión de golpe; todas las solicitudes SCHEDULED vuelven a PENDING
 - **Agrupación de actividades en el calendario**: cuando dos o más actividades se solapan en el tiempo, se reemplazan por un único evento "N actividades" (algoritmo union-find). Al hacer click se abre un modal que lista todas las actividades con opción de acceder a cada una individualmente
+- **Personalización de marca**: el color principal de la UI se almacena en BD por espacio y se aplica como CSS variables al cargar; el logo se resuelve desde `client/public/logo-{slug}.png` donde `slug` es el nombre del espacio normalizado (minúsculas, sin tildes ni espacios)
 
 ---
 
