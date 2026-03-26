@@ -83,6 +83,28 @@ export const updateResource = async (req: Request, res: Response): Promise<void>
   }
 };
 
+export const deleteResource = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const resource = await prisma.resource.findUnique({ where: { id } });
+    if (!resource) {
+      res.status(404).json({ error: 'Recurso no encontrado' });
+      return;
+    }
+    const bookingCount = await prisma.booking.count({ where: { resourceId: id } });
+    if (bookingCount > 0) {
+      res.status(409).json({ error: `No se puede eliminar: el recurso tiene ${bookingCount} reserva(s) asociada(s). Desactívalo en su lugar.` });
+      return;
+    }
+    // Eliminar exenciones de capacitaciones antes de borrar el recurso
+    await prisma.trainingExemption.deleteMany({ where: { resourceId: id } });
+    await prisma.resource.delete({ where: { id } });
+    res.json({ message: 'Recurso eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar recurso' });
+  }
+};
+
 export const toggleResource = async (req: Request, res: Response): Promise<void> => {
   try {
     const resource = await prisma.resource.findUnique({ where: { id: req.params.id } });

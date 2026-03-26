@@ -24,4 +24,6 @@ export const resourceService = {
 
   toggle: (id: string) =>
     api.patch<Resource>(`/resources/${id}/toggle`).then((r) => r.data),
+
+  remove: (id: string) => api.delete(`/resources/${id}`),
 };

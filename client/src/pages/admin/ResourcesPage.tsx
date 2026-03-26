@@ -3,8 +3,10 @@ import { Resource } from '../../types';
 import { useResourceStore } from '../../store/resourceStore';
 import { useAuthStore } from '../../store/authStore';
 import ResourceForm from '../../components/admin/ResourceForm';
+import ConfirmModal from '../../components/shared/ConfirmModal';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import SortableHeader, { SortState, toggleSort, compareVals } from '../../components/shared/SortableHeader';
+import { resourceService } from '../../services/resource.service';
 import toast from 'react-hot-toast';
 
 export default function ResourcesPage() {
@@ -14,6 +16,7 @@ export default function ResourcesPage() {
   const [editing, setEditing] = useState<Resource | undefined>();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortState | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Resource | null>(null);
   const handleSort = (key: string) => setSort(toggleSort(sort, key));
 
   const displayResources = useMemo(() => {
@@ -44,6 +47,20 @@ export default function ResourcesPage() {
       toast.success(isActive ? 'Recurso desactivado' : 'Recurso activado');
     } catch {
       toast.error('Error al cambiar estado del recurso');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      await resourceService.remove(confirmDelete.id);
+      toast.success('Recurso eliminado');
+      setConfirmDelete(null);
+      fetchAll(true);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al eliminar recurso');
+      setConfirmDelete(null);
     }
   };
 
@@ -121,10 +138,16 @@ export default function ResourcesPage() {
                       <button
                         onClick={() => handleToggle(r.id, r.isActive)}
                         className={`text-xs font-medium ${
-                          r.isActive ? 'text-red-500 hover:text-red-700' : 'text-green-600 hover:text-green-800'
+                          r.isActive ? 'text-amber-500 hover:text-amber-700' : 'text-green-600 hover:text-green-800'
                         }`}
                       >
                         {r.isActive ? 'Desactivar' : 'Activar'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(r)}
+                        className="text-red-500 hover:text-red-700 text-xs font-medium"
+                      >
+                        Eliminar
                       </button>
                     </div>
                   </td>
@@ -140,6 +163,17 @@ export default function ResourcesPage() {
         <ResourceForm
           resource={editing}
           onClose={() => { setShowForm(false); setEditing(undefined); fetchAll(true); }}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Eliminar recurso"
+          message={`¿Eliminar "${confirmDelete.name}"? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar"
+          variant="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
     </div>
