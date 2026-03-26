@@ -19,6 +19,7 @@ import certificationRoutes from './routes/certification.routes';
 import settingsRoutes from './routes/settings.routes';
 import spaceRoutes from './routes/space.routes';
 import categoryRoutes from './routes/category.routes';
+import notificationRoutes from './routes/notification.routes';
 
 // ── Validación de variables de entorno críticas ───────────────────────────────
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
@@ -94,6 +95,7 @@ app.use('/api/resources', resourceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api', trainingRoutes);
 app.use('/api', certificationRoutes);
 app.use('/api', settingsRoutes);

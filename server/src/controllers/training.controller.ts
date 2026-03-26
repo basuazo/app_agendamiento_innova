@@ -4,6 +4,7 @@ import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import { ELEVATED_ROLES } from '../middleware/role.middleware';
 import prisma from '../lib/prisma';
 import logger from '../lib/logger';
+import { notifySpaceUsers } from '../lib/notifications';
 
 const ENROLLMENT_INCLUDE = {
   user: { select: { id: true, name: true, email: true, organization: true } },
@@ -90,6 +91,16 @@ export const createTraining = async (req: AuthRequest, res: Response): Promise<v
     });
 
     res.status(201).json(training);
+
+    // Notificar a todas las usuarias del espacio (en background, no bloquea la respuesta)
+    const fmtDate = (d: Date) => d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const fmtTime = (d: Date) => d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+    notifySpaceUsers(spaceId, {
+      type: 'TRAINING_NEW',
+      title: 'Nueva capacitación disponible',
+      message: `"${title}" — ${fmtDate(startTime)} ${fmtTime(startTime)}`,
+      linkTo: '/my-trainings',
+    }, req.user!.id).catch(() => {});
   } catch (error) {
     logger.error({ err: error }, 'Error al crear capacitación');
     res.status(500).json({ error: 'Error al crear la capacitación' });

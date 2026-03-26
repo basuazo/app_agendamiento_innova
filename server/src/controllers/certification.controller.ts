@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest, resolveSpaceId } from '../middleware/auth.middleware';
 import prisma from '../lib/prisma';
 import { logAudit } from '../lib/audit';
+import { notifyRolesInSpace } from '../lib/notifications';
 
 const CATEGORY_SELECT = { select: { id: true, name: true, slug: true, color: true } };
 
@@ -78,6 +79,16 @@ export const requestCertification = async (req: AuthRequest, res: Response): Pro
       include: { category: CATEGORY_SELECT },
     });
     res.status(201).json(request);
+
+    // Notificar a ADMIN y LIDER_TECNICA del espacio (en background)
+    if (req.user!.spaceId) {
+      notifyRolesInSpace(req.user!.spaceId, ['ADMIN', 'LIDER_TECNICA'], {
+        type: 'CERT_REQUEST',
+        title: 'Nueva solicitud de certificación',
+        message: `${req.user!.email} solicitó certificación en ${(request as any).category.name}`,
+        linkTo: '/admin/certifications',
+      }).catch(() => {});
+    }
   } catch {
     res.status(500).json({ error: 'Error al crear solicitud de certificación' });
   }

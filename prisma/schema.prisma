@@ -116,6 +116,7 @@ model User {
   certificationsMade    Certification[]       @relation("CertifierCertifications")
   certificationRequests CertificationRequest[] @relation("UserCertRequests")
   auditLogs             AuditLog[]            @relation("AuditLogs")
+  notifications         Notification[]
 }
 
 model Resource {
@@ -283,6 +284,29 @@ model AuditLog {
   @@index([actorId])
   @@index([action])
   @@index([createdAt])
+}
+
+enum NotificationType {
+  TRAINING_NEW
+  USER_PENDING
+  CERT_REQUEST
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  linkTo    String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([expiresAt])
 }
 
 model BusinessHours {

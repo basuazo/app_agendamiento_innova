@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useBrandingStore } from '../../store/brandingStore';
 import { spaceService } from '../../services/space.service';
+import { notificationService } from '../../services/notification.service';
 import type { Space } from '../../types';
 
 export default function Navbar() {
@@ -17,6 +18,18 @@ export default function Navbar() {
   const [spaceOpen, setSpaceOpen] = useState(false);
   const adminRef = useRef<HTMLDivElement>(null);
   const spaceRef = useRef<HTMLDivElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Cargar conteo de notificaciones no leídas
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return; }
+    const load = () => {
+      notificationService.getAll().then(({ unreadCount: c }) => setUnreadCount(c)).catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => clearInterval(interval);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (user?.role === 'SUPER_ADMIN') {
@@ -44,13 +57,16 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Cerrar el menú al cambiar de ruta
+  // Cerrar el menú al cambiar de ruta; refrescar notificaciones al salir de /notifications
   useEffect(() => {
     setAdminOpen(false);
     setMobileMenuOpen(false);
     setMobileAdminOpen(false);
     setSpaceOpen(false);
-  }, [location.pathname]);
+    if (location.pathname !== '/notifications' && user) {
+      notificationService.getAll().then(({ unreadCount: c }) => setUnreadCount(c)).catch(() => {});
+    }
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentSpace = spaces.find((s) => s.id === currentSpaceId);
 
@@ -257,6 +273,20 @@ export default function Navbar() {
             )}
           </div>
 
+          {/* Campana de notificaciones — desktop */}
+          <div className="hidden md:flex items-center">
+            <Link to="/notifications" className="relative p-2 rounded-lg text-gray-500 hover:text-brand-600 hover:bg-gray-50 transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 flex items-center justify-center w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </Link>
+          </div>
+
           {/* Usuario + Salir — solo desktop */}
           <div className="hidden md:flex items-center gap-3">
             <Link to="/profile" className="text-right group">
@@ -321,6 +351,16 @@ export default function Navbar() {
               location.pathname === '/my-trainings' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
             }`}>
               Capacitaciones
+            </Link>
+            <Link to="/notifications" className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              location.pathname === '/notifications' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
+            }`}>
+              Notificaciones
+              {unreadCount > 0 && (
+                <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Link>
 
             {/* Selector de espacio móvil — solo SUPER_ADMIN */}

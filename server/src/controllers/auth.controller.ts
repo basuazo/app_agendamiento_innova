@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../lib/prisma';
 import logger from '../lib/logger';
+import { notifyRolesInSpace } from '../lib/notifications';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -46,6 +47,14 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     });
 
     res.status(201).json({ message: 'Registro exitoso. Tu cuenta está pendiente de verificación por el administrador.' });
+
+    // Notificar a admins y líderes comunitarias del espacio (en background)
+    notifyRolesInSpace(spaceId, ['ADMIN', 'LIDER_COMUNITARIA'], {
+      type: 'USER_PENDING',
+      title: 'Nueva usuaria pendiente de verificación',
+      message: `${name} (${email}) se registró y espera verificación.`,
+      linkTo: '/admin/users',
+    }).catch(() => {});
   } catch (error) {
     logger.error({ err: error }, 'Error en registro');
     res.status(500).json({ error: 'Error interno del servidor' });

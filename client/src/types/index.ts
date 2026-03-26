@@ -130,6 +130,19 @@ export interface Training {
   enrollments: TrainingEnrollment[];
 }
 
+export type NotificationType = 'TRAINING_NEW' | 'USER_PENDING' | 'CERT_REQUEST';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  linkTo?: string | null;
+  isRead: boolean;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface Certification {
   id: string;
   userId: string;

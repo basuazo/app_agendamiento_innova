@@ -150,7 +150,7 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Validación de horario de negocio**: el formulario de reserva muestra el horario del espacio en tiempo real y bloquea horas fuera del rango configurado, tanto en frontend (feedback inmediato) como en backend (validación de seguridad).
 - **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente. Al revocar una certificación, la solicitud asociada vuelve a estado PENDIENTE (no se elimina), permitiendo reprogramar sin que el usuario deba solicitarla de nuevo. Desde el popup de sesión de certificación en el calendario, el admin puede cancelar toda la sesión con un clic, revirtiendo todas las solicitudes PROGRAMADAS a PENDIENTE.
 - **Capacitaciones**: el admin/Líder Técnica crea y edita sesiones de capacitación con cupos y horarios configurables (HH:MM). Las usuarias se inscriben desde `/my-trainings` o desde el popup de la capacitación en el calendario. Cupos llenos → lista de espera con promoción automática. Desde el popup del calendario el admin puede editar, eliminar o agendar en el mismo horario (si hay recursos libres por exenciones). La página `/admin/trainings` muestra el listado completo con las inscritas.
-- **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings`, usando un combobox de búsqueda por nombre o email.
+- **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings` y también desde el popup de capacitación en el calendario, usando un combobox de búsqueda por nombre o email. La lista de inscritas es visible para todas las usuarias (solo lectura para USER).
 - **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones.
 - **Sala de reuniones**: auto-selecciona el único recurso disponible. Incluye campo de N° de asistentes (validado contra el aforo de reuniones) y campo de notas contextual.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
@@ -159,6 +159,9 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Agendar por otra usuaria**: todos los roles elevados pueden crear reservas a nombre de cualquier usuaria del espacio.
 - **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN y LIDER_COMUNITARIA pueden descargar un `.xlsx` con el detalle completo.
 - **Aforo configurable**: cada espacio tiene dos límites editables desde Configuración — uno para máquinas y otro para la sala de reuniones.
+- **Duración máxima de agendamiento configurable**: desde Configuración, el admin puede establecer el tiempo máximo por reserva en intervalos de 30 min (desde 30 min hasta 4 horas). Se aplica tanto en frontend (feedback en tiempo real) como en backend.
+- **Eliminación de recursos**: los roles elevados pueden eliminar recursos desde la página de Recursos. Si el recurso tiene reservas históricas, el sistema bloquea la eliminación e indica que debe desactivarse en su lugar.
+- **Soft delete de usuarios**: al eliminar un usuario sus datos históricos (reservas, certificaciones, inscripciones) se conservan. Si se crea un nuevo usuario con el mismo email, el sistema reactiva la cuenta con los nuevos datos en vez de generar un error.
 - **Personalización por espacio**: desde `/admin/customization`, ADMIN y SUPER_ADMIN pueden configurar el color principal de la interfaz (botones, enlaces, indicadores). El logo se carga automáticamente desde un archivo estático en `client/public/` con el nombre normalizado del espacio (ej. `logo-puentealto.png`).
 - **Google Calendar**: sincronización automática de reservas CONFIRMED (opcional).
 
@@ -168,7 +171,7 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 
 - **Helmet** — headers HTTP seguros (X-Frame-Options, HSTS, etc.)
 - **Compresión HTTP** — middleware `compression` (gzip/brotli) en todas las respuestas
-- **Rate limiting** — 10 intentos / 15 min en login y registro
+- **Rate limiting** — 50 intentos / 15 min en login y registro (por IP real via `trust proxy`)
 - **CORS** restringido a `CLIENT_URL`; body limit 1 MB
 - **JWT** con validación de secret ≥ 32 chars en startup; bcrypt salt 10
 - **Logs estructurados** — pino JSON en producción, pretty en desarrollo; todos los errores de controllers usan `logger.error`
@@ -236,7 +239,7 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 
 ## Reglas de negocio
 
-- Slots de **hasta 4 horas**; horario configurable por espacio (default lun–sáb 09:00–17:00)
+- Duración máxima de reserva **configurable por espacio** desde la página de Configuración (30 min a 4 h en intervalos de 30 min; default 4 h). Horario configurable por espacio (default lun–sáb 09:00–17:00)
 - **Horario de negocio**: las reservas no pueden crearse fuera del horario configurado del espacio. El formulario muestra el horario en tiempo real y el backend lo valida independientemente.
 - **Certificación por categoría**, no por máquina individual. Sin cert → reserva PENDING
 - Admin y recursos con `requiresCertification=false` → reserva CONFIRMED directa
@@ -244,6 +247,8 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Google Calendar sincroniza solo reservas CONFIRMED
 - Máximo **10 usuarias** por sesión de certificación
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
+- **Soft delete de usuarios**: `deletedAt` marca la eliminación sin borrar el historial. Un usuario eliminado no aparece en listas ni puede iniciar sesión. Si se crea un usuario con el mismo email, la cuenta se reactiva con los nuevos datos
+- **Eliminación de recursos**: solo si no tienen reservas asociadas. Si las tienen, el sistema indica desactivar en su lugar
 - **Inscripción a capacitaciones**: cupos configurables por sesión. Al llenarse, las siguientes inscripciones van a lista de espera. Al cancelar una inscripción CONFIRMED, la primera en espera se promueve automáticamente a CONFIRMED
 - **Inscripción por roles elevados**: ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA pueden inscribir y desinscribir a otras usuarias en capacitaciones
 - **Edición de reservas**: el propietario de una reserva (o un rol elevado) puede editar fecha/hora/notas directamente desde el detalle en el calendario. No se puede editar si la reserva está CANCELADA o RECHAZADA

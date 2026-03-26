@@ -232,9 +232,9 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 
 | Modelo | Descripcion |
 |--------|------------|
-| `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios. Tiene `maxCapacity` (aforo maquinas) y `maxCapacityReunion` (aforo sala) |
+| `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios. Tiene `maxCapacity` (aforo maquinas), `maxCapacityReunion` (aforo sala) y `maxBookingMinutes` (duracion maxima de reserva, 30–240 en intervalos de 30) |
 | `Category` | Categoria de maquina dinamica, pertenece a un Space (reemplaza enum ResourceCategory) |
-| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, y spaceId (null para SUPER_ADMIN) |
+| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, spaceId (null para SUPER_ADMIN) y deletedAt (soft delete: null = activo) |
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
 | `Booking` | Reservas con status, purpose, campos especiales segun categoria |
 | `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria) |
@@ -396,7 +396,7 @@ GET      /api/health               <- health check con DB
 - Roles elevados o recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Deteccion de conflictos:** `startA < endB AND endA > startB` → 409
 - **Horario de negocio**: reservas validadas contra `BusinessHours` del espacio tanto en frontend como en backend. Frontend usa strings HH:MM locales para evitar ambiguedad de zona horaria. Backend recibe `localDate`, `localStartTime`, `localEndTime` en el body de creacion de reserva y consulta `BusinessHours` via `findUnique({ spaceId_dayOfWeek })`. Comparacion HH:MM como string lexicografica es suficiente y sin timezone.
-- Horario flexible hasta 4 horas por reserva; configurable via BusinessHours (default 09:00-17:00, por espacio)
+- Duracion maxima de reserva configurable via `Space.maxBookingMinutes` (default 240 min = 4h, intervalos de 30). El backend valida contra este valor en createBooking y updateBooking; el frontend muestra el limite en tiempo real en el hint de duracion del BookingModal
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
 - Maximo 10 usuarias por sesion de certificacion
 - Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
@@ -420,7 +420,7 @@ GET      /api/health               <- health check con DB
 
 ### Produccion-ready (auditoria de seguridad aplicada)
 - Helmet (headers HTTP seguros)
-- Rate limiting en auth: 10 intentos / 15 min
+- Rate limiting en auth: 50 intentos / 15 min por IP real (`app.set('trust proxy', 1)` antes del limiter, necesario en Render para evitar que todos compartan la misma IP del proxy)
 - Graceful shutdown (SIGTERM/SIGINT)
 - Pino logger estructurado (pretty en dev, JSON en prod) — instancia en `lib/logger.ts`
 - Compresion HTTP gzip/brotli (`compression` middleware, antes de helmet en `app.ts`)
@@ -625,6 +625,40 @@ GET      /api/health               <- health check con DB
 - `handleDateClick` tambien detecta actividades en la celda clicada y abre `clusterModal` si las hay, en lugar de ir directo al BookingModal
 - `slotModal` fue eliminado completamente y reemplazado por `clusterModal`
 
+### Feature: Soft delete de usuarios
+- Campo `deletedAt DateTime?` en modelo `User` (migracion `20260325225536_add_user_soft_delete`)
+- `deleteUser`: en vez de `prisma.user.delete()`, hace `prisma.user.update({ deletedAt: new Date() })`. Tambien cancela reservas PENDING y CONFIRMED (antes solo CONFIRMED)
+- `getUsers`: filtra `deletedAt: null` para excluir usuarios eliminados de la lista
+- Login: bloquea con 403 si `user.deletedAt` esta seteado ("Esta cuenta ha sido eliminada")
+- Tokens JWT existentes de usuarios eliminados siguen validos hasta expirar (7 dias) — comportamiento aceptable para sistema interno
+- `createUser`: si el email existe pero `deletedAt != null`, reactiva el usuario con `update` (nombre, password, rol, espacio, `deletedAt: null`) en vez de rechazar con 409
+
+### Feature: Eliminacion de recursos
+- `deleteResource` en `resource.controller.ts`: verifica que no haya reservas asociadas (`bookingCount > 0` → 409 con mensaje explicativo). Elimina primero `TrainingExemption` del recurso, luego el recurso
+- Ruta `DELETE /api/resources/:id` protegida con `requireElevated`
+- `resourceService.remove(id)` en el frontend
+- Boton "Eliminar" en `ResourcesPage` con `ConfirmModal`. Si hay reservas, el toast muestra el mensaje del backend ("Desactivalo en su lugar")
+- Boton "Desactivar" cambio de rojo a ambar para diferenciar de "Eliminar" (que queda en rojo)
+
+### Feature: Duracion maxima de agendamiento configurable
+- Campo `maxBookingMinutes Int @default(240)` en modelo `Space` (migracion `20260326002843_add_space_max_booking_minutes`)
+- Valores validos: `[30, 60, 90, 120, 150, 180, 210, 240]` (intervalos de 30 min, de 30 min a 4 h)
+- `GET/PUT /api/settings/business-hours` ahora incluye `maxBookingMinutes` en la respuesta y en el body
+- `booking.controller` (createBooking y updateBooking): consulta `space.maxBookingMinutes` en vez del hardcode `4 * 60 * 60 * 1000`. El mensaje de error menciona el limite configurado ("no puede durar mas de 1:30 horas", etc.)
+- `SpaceSettings` en `types/index.ts` incluye `maxBookingMinutes: number`
+- `settingsService.updateBusinessHours` acepta cuarto parametro `maxBookingMinutes`
+- `SettingsPage`: nuevo bloque "Duracion maxima de agendamiento" con `<select>` entre el bloque de Aforo y el de Horarios
+- `CalendarPage`: carga `maxBookingMinutes` desde settings y lo pasa a `BookingModal` como prop
+- `BookingModal`: prop `maxBookingMinutes?: number` (default 240). Validacion al submit y hint inline en tiempo real usan el valor dinamico
+
+### Feature: Inscripcion desde el calendario para roles elevados
+- Modal de detalle de capacitacion en `CalendarPage` ahora incluye `UserCombobox` + boton "Inscribir" para roles elevados (igual patron que `TrainingsPage`)
+- Boton `✕` por fila en la lista de inscritas para desinscribir individualmente (solo admins)
+- `handleEnrollFor` y `handleUnenrollFor` en `CalendarPage` usan `trainingService.enroll/unenroll(id, targetUserId)`
+- `fetchTrainings` actualizado para sincronizar `selectedTraining` con los datos frescos (evita que el modal muestre datos stale tras cada accion)
+- Lista de inscritas visible para TODAS las usuarias (no solo admins) — solo lectura para USER
+- Boton "Agendar en este horario" movido al fondo del modal, separado por `border-t`, con estilo apagado (`text-xs`, `text-gray-500`) para distinguirlo claramente de la accion de inscripcion
+
 ### Feature: Personalizacion de marca por espacio
 - Campos `logoUrl String?` y `primaryColor String?` agregados al modelo `Space` (migracion `20260325032135_add_space_customization`)
 - **Color primario:** almacenado en BD, editable desde `/admin/customization` (solo ADMIN y SUPER_ADMIN). Se aplica como CSS variables (`--brand-50/100/500/600/700`) sobre `document.documentElement` al cargar la app. Tailwind usa estas variables en lugar de valores hardcodeados. FullCalendar tambien usa `var(--brand-600/700)` en `index.css`.
@@ -676,4 +710,8 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **Inputs de hora:** usar `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`. No usar `type="time"` — el browser controla la edicion segmento a segmento y no permite borrar todo el valor. Validar con regex `/^\d{2}:\d{2}$/` antes de parsear. Comparacion de horarios HH:MM como strings lexicograficas funciona correctamente.
 - **Validacion de horario de negocio sin timezone:** pasar `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) como campos adicionales en el body de creacion de reserva. El backend usa estos valores directamente contra `BusinessHours.openTime`/`closeTime` sin conversion de zona horaria. En el frontend, `new Date(date + 'T12:00:00').getDay()` para obtener el dia de la semana evita desfase UTC.
 - **Rutas estaticas antes de dinamicas en Express:** `/admin/trainings/export` debe declararse ANTES de `/admin/trainings/:id` para que Express no interprete "export" como un ID de capacitacion.
-- **GET /api/users ahora usa `requireElevated`:** LIDER_TECNICA puede listar usuarios del espacio (necesario para el combobox de inscripcion en TrainingsPage). Antes solo `requireComunitaria` tenia acceso.
+- **GET /api/users ahora usa `requireElevated`:** LIDER_TECNICA puede listar usuarios del espacio (necesario para el combobox de inscripcion en TrainingsPage y CalendarPage). Antes solo `requireComunitaria` tenia acceso.
+- **Soft delete de usuarios:** `deletedAt DateTime?` en User. `getUsers` filtra `deletedAt: null`. Login verifica `user.deletedAt`. `createUser` con email de usuario eliminado → reactiva con `update` en vez de crear nuevo registro (evita conflicto de unique constraint en email).
+- **Eliminacion de recursos:** `DELETE /api/resources/:id` — bloquea con 409 si hay reservas. Elimina `TrainingExemption` del recurso antes de borrar. El frontend muestra el error del backend en el toast.
+- **maxBookingMinutes en booking.controller:** en createBooking, la consulta a `space` para obtener `maxBookingMinutes` ocurre DESPUES de fetchear el resource (necesita `resource.spaceId`). En updateBooking, la consulta a resource incluye `spaceId` y se hace una segunda query para obtener `maxBookingMinutes` del space. No se puede mover la validacion antes del fetch del resource porque se necesita el spaceId.
+- **trust proxy en Render:** `app.set('trust proxy', 1)` debe declararse en `app.ts` ANTES de registrar los middlewares de rate-limit, para que `req.ip` sea la IP real del cliente (X-Forwarded-For) y no la IP del proxy de Render.
