@@ -491,35 +491,24 @@ export default function CalendarPage() {
                   )}
                 </div>
 
-                {/* Agendar en este horario */}
-                <button
-                  onClick={() => {
-                    setSelectedTraining(null);
-                    handleSlotClick(start);
-                  }}
-                  className="w-full mb-3 py-2.5 bg-brand-50 border border-brand-200 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-100 transition-colors flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Agendar en este horario
-                </button>
-
-                {/* Lista de inscriptas (solo admin) */}
-                {isAdmin && (
-                  <div className="mb-4">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-                      Inscritas {t.enrollments.length > 0 && `(${t.enrollments.length})`}
-                    </p>
-                    {t.enrollments.length > 0 && (
-                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto mb-3">
-                        {t.enrollments.map((e) => (
-                          <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                            <span className="text-gray-800 truncate mr-2">{e.user.name}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
-                              </span>
+                {/* Lista de inscriptas — visible para todos */}
+                <div className="mb-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                    Inscritas {t.enrollments.length > 0 && `(${t.enrollments.length})`}
+                  </p>
+                  {t.enrollments.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Nadie inscrita aún</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto mb-3">
+                      {t.enrollments.map((e) => (
+                        <div key={e.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="text-gray-800 truncate mr-2">{e.user.name}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${e.status === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {e.status === 'CONFIRMED' ? 'Confirmada' : 'En espera'}
+                            </span>
+                            {/* Botón desinscribir: solo admins */}
+                            {isAdmin && (
                               <button
                                 onClick={() => handleUnenrollFor(t, e.userId)}
                                 disabled={enrollLoading}
@@ -530,12 +519,14 @@ export default function CalendarPage() {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                               </button>
-                            </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                    {/* Inscribir otra usuaria */}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Inscribir otra usuaria: solo admins */}
+                  {isAdmin && (
                     <div className="flex gap-2 items-center">
                       <UserCombobox
                         users={users.filter((u) => !t.enrollments.some((e) => e.userId === u.id))}
@@ -550,58 +541,72 @@ export default function CalendarPage() {
                         Inscribir
                       </button>
                     </div>
-                  </div>
+                  )}
+                </div>
+
+                {/* Botón inscripción propia */}
+                {user?.role !== 'SUPER_ADMIN' && (
+                  <button
+                    onClick={() => handleEnroll(t)}
+                    disabled={enrollLoading || (!myEnrollment && isFull && waitlistCount >= 20)}
+                    className={`w-full py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 mb-2 ${
+                      myEnrollment
+                        ? 'border border-red-300 text-red-600 hover:bg-red-50'
+                        : isFull
+                        ? 'bg-amber-500 text-white hover:bg-amber-600'
+                        : 'bg-brand-600 text-white hover:bg-brand-700'
+                    }`}
+                  >
+                    {enrollLoading
+                      ? '...'
+                      : myEnrollment
+                      ? myEnrollment.status === 'WAITLIST'
+                        ? 'Salir de lista de espera'
+                        : 'Cancelar inscripción'
+                      : isFull
+                      ? 'Unirse a lista de espera'
+                      : 'Inscribirse'}
+                  </button>
                 )}
 
-                <div className="flex gap-3 pt-2 flex-wrap">
-                  {/* Botón inscripción (usuarios y roles elevados si no son SUPER_ADMIN) */}
-                  {user?.role !== 'SUPER_ADMIN' && (
-                    <button
-                      onClick={() => handleEnroll(t)}
-                      disabled={enrollLoading || (!myEnrollment && isFull && waitlistCount >= 20)}
-                      className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 ${
-                        myEnrollment
-                          ? 'border border-red-300 text-red-600 hover:bg-red-50'
-                          : isFull
-                          ? 'bg-amber-500 text-white hover:bg-amber-600'
-                          : 'bg-brand-600 text-white hover:bg-brand-700'
-                      }`}
-                    >
-                      {enrollLoading
-                        ? '...'
-                        : myEnrollment
-                        ? myEnrollment.status === 'WAITLIST'
-                          ? 'Salir de lista de espera'
-                          : 'Cancelar inscripción'
-                        : isFull
-                        ? 'Unirse a lista de espera'
-                        : 'Inscribirse'}
-                    </button>
-                  )}
-
-                  {/* Botones admin */}
-                  {canManageTrainings && (
+                {/* Botones admin */}
+                {canManageTrainings && (
+                  <div className="flex gap-2 mb-2">
                     <button
                       onClick={() => handleEditTraining(t)}
-                      className="px-4 py-2.5 border border-brand-300 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 transition-colors"
+                      className="flex-1 py-2.5 border border-brand-300 text-brand-700 rounded-lg text-sm font-medium hover:bg-brand-50 transition-colors"
                     >
                       Editar
                     </button>
-                  )}
-                  {canManageTrainings && (
                     <button
                       onClick={() => setConfirmDeleteTraining(t)}
-                      className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
+                      className="flex-1 py-2.5 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
                     >
                       Eliminar
                     </button>
-                  )}
+                  </div>
+                )}
 
+                <button
+                  onClick={() => setSelectedTraining(null)}
+                  className="w-full py-2 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors mb-2"
+                >
+                  Cerrar
+                </button>
+
+                {/* Agendar en simultaneo — separado visualmente del flujo de inscripción */}
+                <div className="border-t border-gray-100 pt-3 mt-1">
                   <button
-                    onClick={() => setSelectedTraining(null)}
-                    className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setSelectedTraining(null);
+                      handleSlotClick(start);
+                    }}
+                    className="w-full py-2 bg-gray-50 border border-gray-200 text-gray-500 rounded-lg text-xs font-medium hover:bg-gray-100 transition-colors flex items-center justify-center gap-1.5"
                   >
-                    Cerrar
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Agendar una máquina en este horario
                   </button>
                 </div>
               </div>
