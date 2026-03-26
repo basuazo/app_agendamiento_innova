@@ -19,12 +19,13 @@ export const getBusinessHours = async (req: AuthRequest, res: Response): Promise
     }
     const [hours, space] = await Promise.all([
       prisma.businessHours.findMany({ where: { spaceId }, orderBy: { dayOfWeek: 'asc' } }),
-      prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true } }),
+      prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true } }),
     ]);
     res.json({
       days: hours,
       maxCapacity: space?.maxCapacity ?? 12,
       maxCapacityReunion: space?.maxCapacityReunion ?? 12,
+      maxBookingMinutes: space?.maxBookingMinutes ?? 240,
     });
   } catch {
     res.status(500).json({ error: 'Error al obtener horarios' });
@@ -39,10 +40,11 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const { days, maxCapacity, maxCapacityReunion } = req.body as {
+    const { days, maxCapacity, maxCapacityReunion, maxBookingMinutes } = req.body as {
       days: { dayOfWeek: number; isOpen: boolean; openTime: string; closeTime: string }[];
       maxCapacity?: number;
       maxCapacityReunion?: number;
+      maxBookingMinutes?: number;
     };
 
     if (!Array.isArray(days) || days.length !== 7) {
@@ -62,10 +64,13 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       }
     }
 
-    const spaceUpdate: { maxCapacity?: number; maxCapacityReunion?: number } = {};
+    const VALID_BOOKING_MINUTES = [30, 60, 90, 120, 150, 180, 210, 240];
+    const spaceUpdate: { maxCapacity?: number; maxCapacityReunion?: number; maxBookingMinutes?: number } = {};
     if (typeof maxCapacity === 'number' && maxCapacity >= 1) spaceUpdate.maxCapacity = maxCapacity;
     if (typeof maxCapacityReunion === 'number' && maxCapacityReunion >= 1) spaceUpdate.maxCapacityReunion = maxCapacityReunion;
+    if (typeof maxBookingMinutes === 'number' && VALID_BOOKING_MINUTES.includes(maxBookingMinutes)) spaceUpdate.maxBookingMinutes = maxBookingMinutes;
 
+    const spaceSelect = { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true } as const;
     const [updatedDays, space] = await Promise.all([
       Promise.all(
         days.map((d) =>
@@ -77,14 +82,15 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
         )
       ),
       Object.keys(spaceUpdate).length > 0
-        ? prisma.space.update({ where: { id: spaceId }, data: spaceUpdate, select: { maxCapacity: true, maxCapacityReunion: true } })
-        : prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true } }),
+        ? prisma.space.update({ where: { id: spaceId }, data: spaceUpdate, select: spaceSelect })
+        : prisma.space.findUnique({ where: { id: spaceId }, select: spaceSelect }),
     ]);
 
     res.json({
       days: updatedDays.sort((a, b) => a.dayOfWeek - b.dayOfWeek),
       maxCapacity: space?.maxCapacity ?? 12,
       maxCapacityReunion: space?.maxCapacityReunion ?? 12,
+      maxBookingMinutes: space?.maxBookingMinutes ?? 240,
     });
   } catch {
     res.status(500).json({ error: 'Error al actualizar horarios' });

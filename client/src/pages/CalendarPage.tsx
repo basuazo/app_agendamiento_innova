@@ -100,6 +100,7 @@ export default function CalendarPage() {
   const [trainings, setTrainings] = useState<Training[]>([]);
   const [certSessions, setCertSessions] = useState<CertificationRequest[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
+  const [maxBookingMinutes, setMaxBookingMinutes] = useState<number>(240);
   const [hoursLoaded, setHoursLoaded] = useState(false);
   const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [confirmDeleteTraining, setConfirmDeleteTraining] = useState<Training | null>(null);
@@ -135,6 +136,7 @@ export default function CalendarPage() {
     try {
       const data = await settingsService.getBusinessHours();
       setBusinessHours(data.days);
+      setMaxBookingMinutes(data.maxBookingMinutes ?? 240);
     } catch {
       // silent — el calendario usará horarios por defecto
     } finally {
@@ -419,6 +421,7 @@ export default function CalendarPage() {
         onClose={handleBookingModalClose}
         preselectedDate={selectedDate}
         businessHours={businessHours}
+        maxBookingMinutes={maxBookingMinutes}
       />
 
       <TrainingModal

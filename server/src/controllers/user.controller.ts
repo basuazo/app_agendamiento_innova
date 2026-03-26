@@ -47,16 +47,24 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
+    if (existing && !existing.deletedAt) {
       res.status(409).json({ error: 'El email ya está registrado' });
       return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { name, email, password: hashedPassword, organization: organization?.trim() || null, role: role ?? 'USER', isVerified: true, spaceId },
-      select: { id: true, name: true, email: true, organization: true, role: true, isVerified: true, spaceId: true, createdAt: true },
-    });
+
+    // Si existe pero estaba eliminado (soft delete), reactivarlo con los nuevos datos
+    const user = existing
+      ? await prisma.user.update({
+          where: { id: existing.id },
+          data: { name, password: hashedPassword, organization: organization?.trim() || null, role: role ?? 'USER', isVerified: true, spaceId, deletedAt: null },
+          select: { id: true, name: true, email: true, organization: true, role: true, isVerified: true, spaceId: true, createdAt: true },
+        })
+      : await prisma.user.create({
+          data: { name, email, password: hashedPassword, organization: organization?.trim() || null, role: role ?? 'USER', isVerified: true, spaceId },
+          select: { id: true, name: true, email: true, organization: true, role: true, isVerified: true, spaceId: true, createdAt: true },
+        });
 
     await logAudit({
       actorId: req.user!.id,

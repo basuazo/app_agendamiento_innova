@@ -178,12 +178,6 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const durationMs = endTime.getTime() - startTime.getTime();
-    if (durationMs > 4 * 60 * 60 * 1000) {
-      res.status(400).json({ error: 'La reserva no puede durar más de 4 horas' });
-      return;
-    }
-
     if (startTime < new Date()) {
       res.status(400).json({ error: 'No se pueden crear reservas en el pasado' });
       return;
@@ -198,6 +192,21 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       where: { id: resourceId },
       include: { category: { select: { id: true, name: true, slug: true, color: true } } },
     });
+
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const spaceForLimit = resource
+      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true } })
+      : null;
+    const maxMs = (spaceForLimit?.maxBookingMinutes ?? 240) * 60 * 1000;
+    const maxLabel = (() => {
+      const m = spaceForLimit?.maxBookingMinutes ?? 240;
+      const h = Math.floor(m / 60); const min = m % 60;
+      return min === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(min).padStart(2,'0')} horas`;
+    })();
+    if (durationMs > maxMs) {
+      res.status(400).json({ error: `La reserva no puede durar más de ${maxLabel}` });
+      return;
+    }
     if (!resource) {
       res.status(404).json({ error: 'Recurso no encontrado' });
       return;
@@ -432,22 +441,30 @@ export const updateBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const durationMs = endTime.getTime() - startTime.getTime();
-    if (durationMs > 4 * 60 * 60 * 1000) {
-      res.status(400).json({ error: 'La reserva no puede durar más de 4 horas' });
-      return;
-    }
-
     if (startTime < new Date()) {
       res.status(400).json({ error: 'No se pueden hacer cambios en el pasado' });
       return;
     }
 
-    // Obtener resource para validaciones (spaceId, capacity)
+    // Obtener resource para validaciones (spaceId, capacity, maxBookingMinutes)
     const resource = await prisma.resource.findUnique({
       where: { id: booking.resourceId },
       select: { spaceId: true, capacity: true },
     });
+    const spaceForLimit = resource
+      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true } })
+      : null;
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const maxMs = (spaceForLimit?.maxBookingMinutes ?? 240) * 60 * 1000;
+    const maxLabel = (() => {
+      const m = spaceForLimit?.maxBookingMinutes ?? 240;
+      const h = Math.floor(m / 60); const min = m % 60;
+      return min === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(min).padStart(2,'0')} horas`;
+    })();
+    if (durationMs > maxMs) {
+      res.status(400).json({ error: `La reserva no puede durar más de ${maxLabel}` });
+      return;
+    }
 
     if (localDate && localStartTime && localEndTime && resource) {
       const dayOfWeek = new Date(`${localDate}T12:00:00`).getDay();

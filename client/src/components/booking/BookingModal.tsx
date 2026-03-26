@@ -16,9 +16,10 @@ interface Props {
   preselectedDate?: Date;
   preselectedResource?: Resource;
   businessHours?: BusinessHours[];
+  maxBookingMinutes?: number;
 }
 
-export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource, businessHours = [] }: Props) {
+export default function BookingModal({ isOpen, onClose, preselectedDate, preselectedResource, businessHours = [], maxBookingMinutes = 240 }: Props) {
   const { create } = useBookingStore();
   const { resources, fetchAll } = useResourceStore();
   const { user } = useAuthStore();
@@ -190,8 +191,10 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
       return;
     }
     const durationMs = endDate.getTime() - startDate.getTime();
-    if (durationMs > 4 * 60 * 60 * 1000) {
-      toast.error('La reserva no puede durar más de 4 horas');
+    if (durationMs > maxBookingMinutes * 60 * 1000) {
+      const h = Math.floor(maxBookingMinutes / 60); const m = maxBookingMinutes % 60;
+      const label = m === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(m).padStart(2,'0')} horas`;
+      toast.error(`La reserva no puede durar más de ${label}`);
       return;
     }
 
@@ -559,9 +562,11 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
               if (diffMs <= 0) return (
                 <p className="text-xs text-red-500 -mt-3">La hora de término debe ser después del inicio</p>
               );
-              if (diffMs > 4 * 60 * 60 * 1000) return (
-                <p className="text-xs text-red-500 -mt-3">Máximo 4 horas por reserva</p>
-              );
+              if (diffMs > maxBookingMinutes * 60 * 1000) {
+                const h = Math.floor(maxBookingMinutes / 60); const m = maxBookingMinutes % 60;
+                const label = m === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(m).padStart(2,'0')} horas`;
+                return <p className="text-xs text-red-500 -mt-3">Máximo {label} por reserva</p>;
+              }
               const hrs = Math.floor(diffMs / 3600000);
               const mins = Math.floor((diffMs % 3600000) / 60000);
               return (

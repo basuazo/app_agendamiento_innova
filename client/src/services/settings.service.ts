@@ -11,8 +11,9 @@ export const settingsService = {
     days: Pick<BusinessHours, 'dayOfWeek' | 'isOpen' | 'openTime' | 'closeTime'>[],
     maxCapacity: number,
     maxCapacityReunion: number,
+    maxBookingMinutes: number,
   ): Promise<SpaceSettings> => {
-    const res = await api.put<SpaceSettings>('/settings/business-hours', { days, maxCapacity, maxCapacityReunion });
+    const res = await api.put<SpaceSettings>('/settings/business-hours', { days, maxCapacity, maxCapacityReunion, maxBookingMinutes });
     return res.data;
   },
 

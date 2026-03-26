@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [days, setDays] = useState<DayState[]>(DEFAULT_HOURS);
   const [maxCapacity, setMaxCapacity] = useState<string>('12');
   const [maxCapacityReunion, setMaxCapacityReunion] = useState<string>('12');
+  const [maxBookingMinutes, setMaxBookingMinutes] = useState<number>(240);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -49,6 +50,7 @@ export default function SettingsPage() {
       }
       setMaxCapacity(String(data.maxCapacity));
       setMaxCapacityReunion(String(data.maxCapacityReunion));
+      setMaxBookingMinutes(data.maxBookingMinutes ?? 240);
     }).catch(() => {
       toast.error('Error al cargar horarios');
     }).finally(() => {
@@ -71,7 +73,7 @@ export default function SettingsPage() {
     }
     setIsSaving(true);
     try {
-      await settingsService.updateBusinessHours(days, parsedCapacity, parsedReunion);
+      await settingsService.updateBusinessHours(days, parsedCapacity, parsedReunion, maxBookingMinutes);
       toast.success('Configuración guardada correctamente');
     } catch {
       toast.error('Error al guardar configuración');
@@ -141,6 +143,28 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Duración máxima de reserva */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-1">Duración máxima de agendamiento</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Tiempo máximo que una usuaria puede reservar en una sola sesión.
+        </p>
+        <select
+          value={maxBookingMinutes}
+          onChange={(e) => setMaxBookingMinutes(Number(e.target.value))}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+        >
+          {[30, 60, 90, 120, 150, 180, 210, 240].map((m) => {
+            const h = Math.floor(m / 60);
+            const min = m % 60;
+            const label = min === 0
+              ? `${h} hora${h > 1 ? 's' : ''}`
+              : `${h}:${String(min).padStart(2, '0')} horas`;
+            return <option key={m} value={m}>{label}</option>;
+          })}
+        </select>
       </div>
 
       {/* Horarios */}

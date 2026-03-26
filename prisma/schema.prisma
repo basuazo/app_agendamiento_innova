@@ -61,6 +61,7 @@ model Space {
   isActive            Boolean  @default(true)
   maxCapacity         Int      @default(12)
   maxCapacityReunion  Int      @default(12)
+  maxBookingMinutes   Int      @default(240) // límite de duración de reserva en minutos (30–240, intervalos de 30)
   logoUrl             String?
   primaryColor        String?
   createdAt           DateTime @default(now())

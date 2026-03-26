@@ -168,4 +168,5 @@ export interface SpaceSettings {
   days: BusinessHours[];
   maxCapacity: number;        // aforo general (máquinas)
   maxCapacityReunion: number; // aforo sala de reuniones
+  maxBookingMinutes: number;  // duración máxima de reserva en minutos (30–240, intervalos de 30)
 }
