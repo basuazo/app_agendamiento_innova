@@ -26,7 +26,6 @@ const SettingsPage       = lazy(() => import('./pages/admin/SettingsPage'));
 const CategoriesPage     = lazy(() => import('./pages/admin/CategoriesPage'));
 const SpacesPage         = lazy(() => import('./pages/superadmin/SpacesPage'));
 const TrainingsPage       = lazy(() => import('./pages/admin/TrainingsPage'));
-const MyTrainingsPage     = lazy(() => import('./pages/MyTrainingsPage'));
 const CustomizationPage   = lazy(() => import('./pages/admin/CustomizationPage'));
 const NotificationsPage   = lazy(() => import('./pages/NotificationsPage'));
 
@@ -105,11 +104,7 @@ export default function App() {
               <Layout><MyCertificationsPage /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/my-trainings" element={
-            <ProtectedRoute>
-              <Layout><MyTrainingsPage /></Layout>
-            </ProtectedRoute>
-          } />
+          <Route path="/my-trainings" element={<Navigate to="/my-bookings" replace />} />
           <Route path="/profile" element={
             <ProtectedRoute>
               <Layout><ProfilePage /></Layout>

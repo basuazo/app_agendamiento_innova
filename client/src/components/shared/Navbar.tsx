@@ -136,9 +136,6 @@ export default function Navbar() {
             <Link to="/my-certifications" className={`text-sm transition-colors ${isActive('/my-certifications')}`}>
               Certificaciones
             </Link>
-            <Link to="/my-trainings" className={`text-sm transition-colors ${isActive('/my-trainings')}`}>
-              Capacitaciones
-            </Link>
 
             {/* Selector de espacio — solo SUPER_ADMIN */}
             {user?.role === 'SUPER_ADMIN' && (
@@ -346,11 +343,6 @@ export default function Navbar() {
               location.pathname === '/my-certifications' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
             }`}>
               Certificaciones
-            </Link>
-            <Link to="/my-trainings" className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              location.pathname === '/my-trainings' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
-            }`}>
-              Capacitaciones
             </Link>
             <Link to="/notifications" className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
               location.pathname === '/notifications' ? 'bg-brand-50 text-brand-600' : 'text-gray-700 hover:bg-gray-50'
