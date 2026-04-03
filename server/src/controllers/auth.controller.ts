@@ -116,7 +116,7 @@ export const getMe = async (req: Request & { user?: { id: string } }, res: Respo
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, name: true, email: true, organization: true, role: true, spaceId: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, organization: true, role: true, spaceId: true, createdAt: true },
     });
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
@@ -130,9 +130,9 @@ export const getMe = async (req: Request & { user?: { id: string } }, res: Respo
 
 export const updateMe = async (req: Request & { user?: { id: string } }, res: Response): Promise<void> => {
   try {
-    const { name, email, organization } = req.body;
+    const { name, email, organization, phone } = req.body;
 
-    if (!name && !email && !organization) {
+    if (!name && !email && !organization && phone === undefined) {
       res.status(400).json({ error: 'Debe proporcionar al menos un campo para actualizar' });
       return;
     }
@@ -151,8 +151,9 @@ export const updateMe = async (req: Request & { user?: { id: string } }, res: Re
         ...(name && { name }),
         ...(email && { email }),
         ...(organization !== undefined && { organization: organization?.trim() || null }),
+        ...(phone !== undefined && { phone: phone?.trim() || null }),
       },
-      select: { id: true, name: true, email: true, organization: true, role: true, spaceId: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, organization: true, role: true, spaceId: true, createdAt: true },
     });
 
     res.json(user);

@@ -28,6 +28,7 @@ const SpacesPage         = lazy(() => import('./pages/superadmin/SpacesPage'));
 const TrainingsPage       = lazy(() => import('./pages/admin/TrainingsPage'));
 const CustomizationPage   = lazy(() => import('./pages/admin/CustomizationPage'));
 const NotificationsPage   = lazy(() => import('./pages/NotificationsPage'));
+const UserDetailPage      = lazy(() => import('./pages/admin/UserDetailPage'));
 
 function PageLoader() {
   return (
@@ -125,6 +126,11 @@ export default function App() {
           <Route path="/admin/users" element={
             <ProtectedRoute adminOnly>
               <Layout><UsersPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/users/:id" element={
+            <ProtectedRoute adminOnly>
+              <Layout><UserDetailPage /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/bookings" element={

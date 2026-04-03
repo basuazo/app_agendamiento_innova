@@ -18,7 +18,7 @@ function fmtDateTime(d: Date) {
 }
 
 const BOOKING_INCLUDE = {
-  user: { select: { id: true, name: true, email: true } },
+  user: { select: { id: true, name: true, email: true, organization: true } },
   resource: { select: { id: true, name: true, category: { select: { id: true, name: true, slug: true, color: true } } } },
 };
 
@@ -95,6 +95,10 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
       include: { exemptions: { select: { resourceId: true } } },
     });
 
+    const maintenances = await prisma.maintenance.findMany({
+      where: { ...overlapWhere, ...(spaceId ? { spaceId } : {}) },
+    });
+
     // Identify cross-block: if any MESON_CORTE booking exists, ESPACIO_REUNION is blocked (and vice versa)
     const mesonResource = resources.find((r) => r.category.slug === 'MESON_CORTE');
     const reunionResource = resources.find((r) => r.category.slug === 'ESPACIO_REUNION');
@@ -108,6 +112,12 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
     const availability: Record<string, { status: string; reason?: string; availableCapacity?: number }> = {};
 
     for (const resource of resources) {
+      // Maintenance block check — bloquea todo el espacio
+      if (maintenances.length > 0) {
+        availability[resource.id] = { status: 'blocked', reason: 'Mantención del espacio' };
+        continue;
+      }
+
       // Training block check
       const blockingTraining = trainings.find(
         (t) => !t.exemptions.some((e) => e.resourceId === resource.id)
@@ -160,10 +170,15 @@ export const checkAvailability = async (req: AuthRequest, res: Response): Promis
 
 export const createBooking = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId, localDate, localStartTime, localEndTime } = req.body;
+    const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId, localDate, localStartTime, localEndTime, isExceptional: isExceptionalRaw } = req.body;
+
+    const ELEVATED = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'];
+    const isElevatedActor = ELEVATED.includes(req.user!.role);
+    // isExceptional solo permitido para roles elevados
+    const isExceptional = !!(isExceptionalRaw && isElevatedActor);
 
     // Admin / líderes pueden agendar en nombre de otra usuaria
-    const bookingUserId = (['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(req.user!.role) && targetUserId) ? targetUserId : req.user!.id;
+    const bookingUserId = (isElevatedActor && targetUserId) ? targetUserId : req.user!.id;
 
     if (!resourceId || !startRaw || !endRaw || !purpose) {
       res.status(400).json({ error: 'resourceId, startTime, endTime y purpose son requeridos' });
@@ -203,7 +218,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       const h = Math.floor(m / 60); const min = m % 60;
       return min === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(min).padStart(2,'0')} horas`;
     })();
-    if (durationMs > maxMs) {
+    if (!isExceptional && durationMs > maxMs) {
       res.status(400).json({ error: `La reserva no puede durar más de ${maxLabel}` });
       return;
     }
@@ -216,8 +231,8 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    // Validar horario de negocio usando los tiempos locales enviados por el cliente
-    if (localDate && localStartTime && localEndTime) {
+    // Validar horario de negocio (solo para reservas no excepcionales)
+    if (!isExceptional && localDate && localStartTime && localEndTime) {
       const dayOfWeek = new Date(`${localDate}T12:00:00`).getDay();
       const bh = await prisma.businessHours.findUnique({
         where: { spaceId_dayOfWeek: { spaceId: resource.spaceId, dayOfWeek } },
@@ -284,6 +299,19 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
           return;
         }
       }
+    }
+
+    // Bloqueo por mantención (siempre, incluso para reservas excepcionales)
+    const maintenanceBlock = await prisma.maintenance.findFirst({
+      where: {
+        spaceId: resource.spaceId,
+        startTime: { lt: endTime },
+        endTime: { gt: startTime },
+      },
+    });
+    if (maintenanceBlock) {
+      res.status(409).json({ error: `El espacio está en mantención: "${maintenanceBlock.title}". No se pueden crear reservas en ese horario.` });
+      return;
     }
 
     const trainingBlock = await prisma.training.findFirst({
@@ -373,6 +401,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
         isPrivate: !!isPrivate,
         attendees,
         companionRelation: companionRelation ?? null,
+        isExceptional,
         status: bookingStatus,
       },
       include: BOOKING_INCLUDE,
@@ -461,12 +490,12 @@ export const updateBooking = async (req: AuthRequest, res: Response): Promise<vo
       const h = Math.floor(m / 60); const min = m % 60;
       return min === 0 ? `${h} hora${h > 1 ? 's' : ''}` : `${h}:${String(min).padStart(2,'0')} horas`;
     })();
-    if (durationMs > maxMs) {
+    if (!booking.isExceptional && durationMs > maxMs) {
       res.status(400).json({ error: `La reserva no puede durar más de ${maxLabel}` });
       return;
     }
 
-    if (localDate && localStartTime && localEndTime && resource) {
+    if (!booking.isExceptional && localDate && localStartTime && localEndTime && resource) {
       const dayOfWeek = new Date(`${localDate}T12:00:00`).getDay();
       const bh = await prisma.businessHours.findUnique({
         where: { spaceId_dayOfWeek: { spaceId: resource.spaceId, dayOfWeek } },
@@ -570,7 +599,7 @@ export const approveBooking = async (req: AuthRequest, res: Response): Promise<v
     const booking = await prisma.booking.findUnique({
       where: { id: req.params.id },
       include: {
-        user: { select: { id: true, name: true, email: true } },
+        user: { select: { id: true, name: true, email: true, organization: true } },
         resource: { include: { category: { select: { id: true, name: true, slug: true, color: true } } } },
       },
     });

@@ -1,48 +1,112 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CertificationRequest, Certification } from '../../types';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { Certification, Category, User } from '../../types';
 import { certificationService } from '../../services/certification.service';
-import { formatDateTime } from '../../utils/dateHelpers';
+import { categoryService } from '../../services/category.service';
+import { userService } from '../../services/user.service';
 import { useAuthStore } from '../../store/authStore';
+import { formatDateTime } from '../../utils/dateHelpers';
+import ConfirmModal from '../../components/shared/ConfirmModal';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
-import SortableHeader, { SortState, toggleSort, compareVals } from '../../components/shared/SortableHeader';
 import toast from 'react-hot-toast';
 
-type Tab = 'requests' | 'scheduled' | 'certified';
+// ── UserCombobox ─────────────────────────────────────────────────────────────
+
+function UserCombobox({
+  users,
+  selectedId,
+  onSelect,
+}: {
+  users: User[];
+  selectedId: string | null;
+  onSelect: (userId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = users.find((u) => u.id === selectedId);
+  const inputVal = open ? query : selected ? `${selected.name} (${selected.email})` : query;
+  const filtered = users.filter((u) => {
+    const q = query.toLowerCase();
+    return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative w-full max-w-sm">
+      <input
+        type="text"
+        value={inputVal}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Buscar usuaria por nombre o email..."
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+          {filtered.map((u) => (
+            <li key={u.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); onSelect(u.id); setQuery(''); setOpen(false); }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+              >
+                <span className="font-medium text-gray-900">{u.name}</span>
+                <span className="ml-2 text-xs text-gray-400">{u.email}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── CertificationsPage ───────────────────────────────────────────────────────
+
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Admin',
+  SUPER_ADMIN: 'Super Admin',
+  LIDER_TECNICA: 'Líder Técnica',
+  LIDER_COMUNITARIA: 'Líder Comunitaria',
+  USER: 'Usuaria',
+};
 
 export default function CertificationsPage() {
   const { currentSpaceId } = useAuthStore();
-  const [tab, setTab] = useState<Tab>('requests');
-  const [pendingRequests, setPendingRequests] = useState<CertificationRequest[]>([]);
-  const [scheduledRequests, setScheduledRequests] = useState<CertificationRequest[]>([]);
-  const [certifications, setCertifications] = useState<Certification[]>([]);
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [userCerts, setUserCerts] = useState<Certification[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
+  const [certsLoading, setCertsLoading] = useState(false);
 
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortState | null>(null);
-  const handleSort = (key: string) => setSort(toggleSort(sort, key));
+  // Certificar: qué fila está en modo "ingresar notas + confirmar"
+  const [certifyingCatId, setCertifyingCatId] = useState<string | null>(null);
+  const [certNotes, setCertNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // Scheduling state
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduling, setScheduling] = useState(false);
+  // Revocar
+  const [revokeTarget, setRevokeTarget] = useState<Certification | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
-  // Resolve state
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
-
-  // Revoke state
-  const [revokingId, setRevokingId] = useState<string | null>(null);
-
-  const load = async () => {
+  const loadBase = async () => {
     try {
       setIsLoading(true);
-      const [pending, scheduled, certs] = await Promise.all([
-        certificationService.getAllRequests('PENDING'),
-        certificationService.getAllRequests('SCHEDULED'),
-        certificationService.getAllCertifications(),
+      const [usrs, cats] = await Promise.all([
+        userService.getAll(),
+        categoryService.getAll(),
       ]);
-      setPendingRequests(pending);
-      setScheduledRequests(scheduled);
-      setCertifications(certs);
+      setUsers(usrs);
+      setCategories(cats);
     } catch {
       toast.error('Error al cargar datos');
     } finally {
@@ -50,355 +114,242 @@ export default function CertificationsPage() {
     }
   };
 
-  useEffect(() => { load(); }, [currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else if (next.size < 10) next.add(id);
-    else toast.error('Máximo 10 usuarias por sesión');
-    setSelectedIds(next);
-  };
-
-  const handleSchedule = async () => {
-    if (!selectedIds.size) { toast.error('Selecciona al menos una solicitud'); return; }
-    if (!scheduledDate) { toast.error('Selecciona una fecha para la sesión'); return; }
-    setScheduling(true);
+  const loadUserCerts = async (userId: string) => {
     try {
-      await certificationService.scheduleSession(Array.from(selectedIds), new Date(scheduledDate).toISOString());
-      toast.success(`Sesión programada para ${selectedIds.size} usuaria(s)`);
-      setSelectedIds(new Set());
-      setScheduledDate('');
-      load();
+      setCertsLoading(true);
+      const certs = await certificationService.getAllCertifications(userId);
+      setUserCerts(certs);
     } catch {
-      toast.error('Error al programar sesión');
+      toast.error('Error al cargar certificaciones');
     } finally {
-      setScheduling(false);
+      setCertsLoading(false);
     }
   };
 
-  const handleResolve = async (id: string, status: 'APPROVED' | 'REJECTED') => {
-    if (status === 'REJECTED' && !confirm('¿Rechazar esta solicitud?')) return;
-    setResolvingId(id);
+  useEffect(() => {
+    loadBase();
+    setSelectedUserId(null);
+    setUserCerts([]);
+  }, [currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelectUser = (userId: string) => {
+    setSelectedUserId(userId);
+    setCertifyingCatId(null);
+    setCertNotes('');
+    loadUserCerts(userId);
+  };
+
+  const handleCertify = async (catId: string) => {
+    if (!selectedUserId) return;
+    setSaving(true);
     try {
-      await certificationService.resolveRequest(id, status);
-      toast.success(status === 'APPROVED' ? 'Certificación otorgada' : 'Solicitud rechazada');
-      load();
-    } catch {
-      toast.error('Error al resolver solicitud');
+      await certificationService.certifyUser(selectedUserId, catId, certNotes.trim() || undefined);
+      toast.success('Certificación otorgada');
+      setCertifyingCatId(null);
+      setCertNotes('');
+      loadUserCerts(selectedUserId);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(msg ?? 'Error al certificar');
     } finally {
-      setResolvingId(null);
+      setSaving(false);
     }
   };
 
-  const handleRevoke = async (id: string) => {
-    if (!confirm('¿Revocar esta certificación?')) return;
-    setRevokingId(id);
+  const handleRevoke = async () => {
+    if (!revokeTarget || !selectedUserId) return;
+    setRevoking(true);
     try {
-      await certificationService.revokeCertification(id);
+      await certificationService.revokeCertification(revokeTarget.id);
       toast.success('Certificación revocada');
-      load();
+      setRevokeTarget(null);
+      loadUserCerts(selectedUserId);
     } catch {
       toast.error('Error al revocar');
     } finally {
-      setRevokingId(null);
+      setRevoking(false);
     }
   };
 
-  const today = new Date().toISOString().split('T')[0];
+  const selectedUser = users.find((u) => u.id === selectedUserId);
 
-  const displayPending = useMemo(() => {
-    const q = search.toLowerCase();
-    const list = q
-      ? pendingRequests.filter((r) =>
-          (r.user?.name ?? '').toLowerCase().includes(q) ||
-          (r.user?.email ?? '').toLowerCase().includes(q) ||
-          (r.category?.name ?? '').toLowerCase().includes(q)
-        )
-      : pendingRequests;
-    if (!sort) return list;
-    return [...list].sort((a, b) => {
-      const val = (x: typeof a) =>
-        sort.key === 'user' ? (x.user?.name ?? '') :
-        sort.key === 'category' ? (x.category?.name ?? '') :
-        sort.key === 'createdAt' ? x.createdAt : '';
-      return compareVals(val(a), val(b), sort.dir);
-    });
-  }, [pendingRequests, search, sort]);
-
-  const displayScheduled = useMemo(() => {
-    const q = search.toLowerCase();
-    const list = q
-      ? scheduledRequests.filter((r) =>
-          (r.user?.name ?? '').toLowerCase().includes(q) ||
-          (r.user?.email ?? '').toLowerCase().includes(q) ||
-          (r.category?.name ?? '').toLowerCase().includes(q)
-        )
-      : scheduledRequests;
-    if (!sort) return list;
-    return [...list].sort((a, b) => {
-      const val = (x: typeof a) =>
-        sort.key === 'user' ? (x.user?.name ?? '') :
-        sort.key === 'category' ? (x.category?.name ?? '') :
-        sort.key === 'scheduledDate' ? (x.scheduledDate ?? '') : '';
-      return compareVals(val(a), val(b), sort.dir);
-    });
-  }, [scheduledRequests, search, sort]);
-
-  const displayCertified = useMemo(() => {
-    const q = search.toLowerCase();
-    const list = q
-      ? certifications.filter((c) =>
-          (c.user?.name ?? '').toLowerCase().includes(q) ||
-          (c.user?.email ?? '').toLowerCase().includes(q) ||
-          (c.category?.name ?? '').toLowerCase().includes(q)
-        )
-      : certifications;
-    if (!sort) return list;
-    return [...list].sort((a, b) => {
-      const val = (x: typeof a) =>
-        sort.key === 'user' ? (x.user?.name ?? '') :
-        sort.key === 'category' ? (x.category?.name ?? '') :
-        sort.key === 'certifiedAt' ? x.certifiedAt : '';
-      return compareVals(val(a), val(b), sort.dir);
-    });
-  }, [certifications, search, sort]);
-
-  const tabLabels: Record<Tab, string> = {
-    requests: `Solicitudes${pendingRequests.length > 0 ? ` (${pendingRequests.length})` : ''}`,
-    scheduled: `Programadas${scheduledRequests.length > 0 ? ` (${scheduledRequests.length})` : ''}`,
-    certified: `Certificadas (${certifications.length})`,
-  };
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Gestión de Certificaciones</h1>
-
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
-          {(['requests', 'scheduled', 'certified'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => { setTab(t); setSort(null); }}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-              {tabLabels[t]}
-            </button>
-          ))}
-        </div>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por usuaria o categoría..."
-          className="w-full max-w-xs border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        />
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Gestión de Certificaciones</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Busca una usuaria para revisar y gestionar sus certificaciones de categoría.
+        </p>
       </div>
 
-      {isLoading ? (
-        <LoadingSpinner />
-      ) : (
+      {/* Buscador de usuaria */}
+      <div className="flex items-center gap-3 mb-6">
+        <UserCombobox
+          users={users}
+          selectedId={selectedUserId}
+          onSelect={handleSelectUser}
+        />
+        {selectedUserId && (
+          <button
+            onClick={() => { setSelectedUserId(null); setUserCerts([]); setCertifyingCatId(null); }}
+            className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      {/* Panel de usuaria seleccionada */}
+      {selectedUser && (
         <>
-          {/* ── Tab: Solicitudes PENDING ── */}
-          {tab === 'requests' && (
-            <div>
-              {pendingRequests.length === 0 ? (
-                <div className="text-center py-16 text-gray-400 text-sm">No hay solicitudes pendientes</div>
-              ) : (
-                <>
-                  <div className="bg-white rounded-xl border border-gray-100 shadow-sm mb-4 overflow-hidden">
-                    <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-50 border-b border-gray-100">
-                        <tr>
-                          <th className="px-4 py-3 text-left">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.size === pendingRequests.length && pendingRequests.length > 0}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  const ids = pendingRequests.slice(0, 10).map((r) => r.id);
-                                  setSelectedIds(new Set(ids));
-                                } else {
-                                  setSelectedIds(new Set());
-                                }
-                              }}
-                              className="w-4 h-4"
-                            />
-                          </th>
-                          <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
-                          <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
-                          <SortableHeader label="Solicitada" sortKey="createdAt" sort={sort} onSort={handleSort} className="text-left" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {displayPending.map((r) => (
-                          <tr key={r.id} className={selectedIds.has(r.id) ? 'bg-brand-50' : ''}>
+          {/* Tarjeta de usuaria */}
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-brand-700 font-semibold text-sm">
+                {selectedUser.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900">{selectedUser.name}</p>
+              <p className="text-sm text-gray-400">{selectedUser.email}</p>
+            </div>
+            <span className="ml-auto flex-shrink-0 text-xs font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+              {ROLE_LABELS[selectedUser.role] ?? selectedUser.role}
+            </span>
+          </div>
+
+          {/* Tabla de categorías */}
+          {certsLoading ? (
+            <LoadingSpinner />
+          ) : categories.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">No hay categorías en este espacio.</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Categoría</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600">Estado</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 hidden md:table-cell">Fecha</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-600 hidden md:table-cell">Certificada por</th>
+                      <th className="px-4 py-3 text-right font-medium text-gray-600">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {categories.map((cat) => {
+                      const cert = userCerts.find((c) => c.categoryId === cat.id);
+                      const isCertifying = certifyingCatId === cat.id;
+
+                      return (
+                        <Fragment key={cat.id}>
+                          <tr>
                             <td className="px-4 py-3">
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(r.id)}
-                                onChange={() => toggleSelect(r.id)}
-                                className="w-4 h-4"
-                              />
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: cat.color }}
+                                />
+                                <span className="font-medium text-gray-900">{cat.name}</span>
+                              </div>
                             </td>
                             <td className="px-4 py-3">
-                              <p className="font-medium text-gray-900">{r.user?.name}</p>
-                              <p className="text-xs text-gray-400">{r.user?.email}</p>
+                              {cert ? (
+                                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  <span className="text-emerald-500">✓</span>
+                                  Certificada
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">Sin certificación</span>
+                              )}
                             </td>
-                            <td className="px-4 py-3 text-gray-700">
-                              {r.category?.name ?? '—'}
+                            <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">
+                              {cert ? formatDateTime(cert.certifiedAt) : '—'}
                             </td>
-                            <td className="px-4 py-3 text-gray-500 text-xs">
-                              {formatDateTime(r.createdAt)}
+                            <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">
+                              {cert?.certifier?.name ?? '—'}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {cert ? (
+                                <button
+                                  onClick={() => setRevokeTarget(cert)}
+                                  className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
+                                >
+                                  Revocar
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setCertifyingCatId(isCertifying ? null : cat.id);
+                                    setCertNotes('');
+                                  }}
+                                  className="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
+                                >
+                                  {isCertifying ? 'Cancelar' : 'Certificar'}
+                                </button>
+                              )}
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    </div>
-                  </div>
 
-                  {/* Programar sesión */}
-                  <div className="bg-brand-50 border border-brand-100 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-brand-900">
-                        {selectedIds.size > 0
-                          ? `${selectedIds.size} usuaria(s) seleccionada(s) — máx. 10`
-                          : 'Selecciona usuarias para programar una sesión'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="datetime-local"
-                        value={scheduledDate}
-                        min={today}
-                        onChange={(e) => setScheduledDate(e.target.value)}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                      />
-                      <button
-                        onClick={handleSchedule}
-                        disabled={scheduling || !selectedIds.size || !scheduledDate}
-                        className="px-4 py-1.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-60 transition-colors whitespace-nowrap"
-                      >
-                        {scheduling ? 'Programando...' : 'Programar Sesión'}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ── Tab: Programadas SCHEDULED ── */}
-          {tab === 'scheduled' && (
-            <div>
-              {scheduledRequests.length === 0 ? (
-                <div className="text-center py-16 text-gray-400 text-sm">No hay sesiones programadas</div>
-              ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
-                        <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
-                        <SortableHeader label="Fecha Sesión" sortKey="scheduledDate" sort={sort} onSort={handleSort} className="text-left" />
-                        <th className="px-4 py-3 text-right font-medium text-gray-600">Resolución</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {displayScheduled.map((r) => (
-                        <tr key={r.id}>
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-gray-900">{r.user?.name}</p>
-                            <p className="text-xs text-gray-400">{r.user?.email}</p>
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {r.category?.name ?? '—'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">
-                            {r.scheduledDate ? formatDateTime(r.scheduledDate) : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleResolve(r.id, 'APPROVED')}
-                                disabled={resolvingId === r.id}
-                                className="text-xs text-emerald-600 hover:text-emerald-800 font-medium disabled:opacity-60"
-                              >
-                                {resolvingId === r.id ? '...' : 'Aprobar'}
-                              </button>
-                              <button
-                                onClick={() => handleResolve(r.id, 'REJECTED')}
-                                disabled={resolvingId === r.id}
-                                className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-60"
-                              >
-                                {resolvingId === r.id ? '...' : 'Rechazar'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Tab: Certificadas ── */}
-          {tab === 'certified' && (
-            <div>
-              {certifications.length === 0 ? (
-                <div className="text-center py-16 text-gray-400 text-sm">No hay certificaciones registradas</div>
-              ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <SortableHeader label="Usuaria" sortKey="user" sort={sort} onSort={handleSort} className="text-left" />
-                        <SortableHeader label="Categoría" sortKey="category" sort={sort} onSort={handleSort} className="text-left" />
-                        <SortableHeader label="Certificada" sortKey="certifiedAt" sort={sort} onSort={handleSort} className="text-left" />
-                        <th className="px-4 py-3 text-right font-medium text-gray-600">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {displayCertified.map((c) => (
-                        <tr key={c.id}>
-                          <td className="px-4 py-3">
-                            <p className="font-medium text-gray-900">{c.user?.name ?? '—'}</p>
-                            <p className="text-xs text-gray-400">{c.user?.email ?? ''}</p>
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {c.category?.name ?? '—'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">
-                            {formatDateTime(c.certifiedAt)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => handleRevoke(c.id)}
-                              disabled={revokingId === c.id}
-                              className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-60"
-                            >
-                              {revokingId === c.id ? '...' : 'Revocar'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-              )}
+                          {/* Fila expandida: notas + confirmar */}
+                          {isCertifying && (
+                            <tr key={`${cat.id}-certify`} className="bg-brand-50">
+                              <td colSpan={5} className="px-4 py-3">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                                  <input
+                                    type="text"
+                                    value={certNotes}
+                                    onChange={(e) => setCertNotes(e.target.value)}
+                                    placeholder="Notas opcionales (ej: aprobó prueba el 03/04/2026)"
+                                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                  />
+                                  <button
+                                    onClick={() => handleCertify(cat.id)}
+                                    disabled={saving}
+                                    className="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 transition-colors whitespace-nowrap"
+                                  >
+                                    {saving ? 'Guardando...' : 'Confirmar certificación'}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Estado vacío */}
+      {!selectedUser && !isLoading && (
+        <div className="text-center py-16 text-gray-400 text-sm">
+          Selecciona una usuaria para ver y gestionar sus certificaciones.
+        </div>
+      )}
+
+      {/* Modal de confirmación de revocación */}
+      {revokeTarget && (
+        <ConfirmModal
+          title="Revocar certificación"
+          message={`¿Estás segura que deseas revocar la certificación en "${revokeTarget.category?.name}" de ${selectedUser?.name}? La usuaria necesitará ser certificada nuevamente para reservar directamente.`}
+          variant="danger"
+          confirmLabel={revoking ? 'Revocando...' : 'Revocar'}
+          onConfirm={handleRevoke}
+          onCancel={() => setRevokeTarget(null)}
+        />
       )}
     </div>
   );

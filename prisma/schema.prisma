@@ -37,13 +37,6 @@ enum CommentTag {
   CLEANING
 }
 
-enum CertReqStatus {
-  PENDING
-  SCHEDULED
-  APPROVED
-  REJECTED
-}
-
 enum CompanionRelation {
   CUIDADOS
   AMISTAD
@@ -71,6 +64,7 @@ model Space {
   categories    Category[]
   resources     Resource[]
   trainings     Training[]
+  maintenances  Maintenance[]
   comments      Comment[]
   businessHours BusinessHours[]
 }
@@ -89,7 +83,6 @@ model Category {
   space                 Space                  @relation(fields: [spaceId], references: [id])
   resources             Resource[]
   certifications        Certification[]
-  certificationRequests CertificationRequest[]
 
   @@unique([spaceId, slug])
 }
@@ -100,6 +93,7 @@ model User {
   email            String    @unique
   password         String
   organization     String?   // Agrupación u Organización a la que pertenece
+  phone            String?   // Teléfono de contacto
   role             Role      @default(USER)
   isVerified       Boolean   @default(false)
   spaceId          String?   // null para SUPER_ADMIN
@@ -111,10 +105,10 @@ model User {
   bookings              Booking[]
   comments              Comment[]
   trainingsCreated      Training[]            @relation("TrainingCreator")
+  maintenancesCreated   Maintenance[]         @relation("MaintenanceCreator")
   trainingEnrollments   TrainingEnrollment[]
   certifications        Certification[]       @relation("UserCertifications")
   certificationsMade    Certification[]       @relation("CertifierCertifications")
-  certificationRequests CertificationRequest[] @relation("UserCertRequests")
   auditLogs             AuditLog[]            @relation("AuditLogs")
   notifications         Notification[]
 }
@@ -153,6 +147,7 @@ model Booking {
   attendees             Int                @default(1)
   companionRelation     CompanionRelation?
   status                BookingStatus      @default(CONFIRMED)
+  isExceptional         Boolean            @default(false)   // reserva fuera de horario habitual (solo admins)
   googleCalendarEventId String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
@@ -208,6 +203,23 @@ model TrainingExemption {
   @@unique([trainingId, resourceId])
 }
 
+model Maintenance {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  spaceId     String
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  space   Space @relation(fields: [spaceId], references: [id])
+  creator User  @relation("MaintenanceCreator", fields: [createdBy], references: [id])
+
+  @@index([spaceId])
+  @@index([startTime, endTime])
+}
+
 model Comment {
   id        String     @id @default(cuid())
   userId    String
@@ -234,24 +246,6 @@ model Certification {
   category  Category @relation(fields: [categoryId], references: [id])
 
   @@unique([userId, categoryId])
-}
-
-model CertificationRequest {
-  id            String        @id @default(cuid())
-  userId        String
-  categoryId    String
-  status        CertReqStatus @default(PENDING)
-  scheduledDate DateTime?
-  notes         String?
-  resolvedAt    DateTime?
-  createdAt     DateTime      @default(now())
-
-  user     User     @relation("UserCertRequests", fields: [userId], references: [id])
-  category Category @relation(fields: [categoryId], references: [id])
-
-  @@unique([userId, categoryId])
-  @@index([userId])
-  @@index([status])
 }
 
 enum AuditAction {

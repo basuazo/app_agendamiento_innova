@@ -4,20 +4,18 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import esLocale from '@fullcalendar/core/locales/es';
-import { Booking, Training, CertificationRequest, BusinessHours } from '../../types';
-import { PURPOSE_LABELS, formatTimeInput } from '../../utils/dateHelpers';
-import { UpdateBookingDto } from '../../services/booking.service';
-import { format } from 'date-fns';
+import { Booking, Training, BusinessHours, Maintenance } from '../../types';
+import { PURPOSE_LABELS } from '../../utils/dateHelpers';
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 type ClusterItem =
-  | { kind: 'booking'; booking: Booking }
-  | { kind: 'training'; training: Training }
-  | { kind: 'certSession'; requests: CertificationRequest[] };
+  | { kind: 'booking'; bookings: Booking[] }
+  | { kind: 'training'; training: Training };
 
 interface VisibleFCEvent {
   id: string;
+  title?: string;
   start: string;
   end: string;
   backgroundColor: string;
@@ -25,10 +23,9 @@ interface VisibleFCEvent {
   textColor: string;
   editable?: boolean;
   extendedProps: {
-    kind: 'booking' | 'training' | 'certSession';
-    booking?: Booking;
+    kind: 'booking' | 'training';
+    bookings?: Booking[];
     training?: Training;
-    requests?: CertificationRequest[];
   };
 }
 
@@ -45,7 +42,6 @@ function isWithinBusinessHours(date: Date, businessHours: BusinessHours[]): bool
 }
 function openMinutes(h: number, m: number) { return h * 60 + m; }
 
-const isValidTime = (t: string) => /^\d{2}:\d{2}$/.test(t);
 
 /**
  * Agrupa eventos visibles que se solapan en el tiempo usando union-find.
@@ -97,9 +93,8 @@ function makeClusterEvent(group: VisibleFCEvent[]) {
   const minStart = group.reduce((m, e) => (e.start < m ? e.start : m), group[0].start);
   const maxEnd   = group.reduce((m, e) => (e.end   > m ? e.end   : m), group[0].end);
   const items: ClusterItem[] = group.map((e) => {
-    if (e.extendedProps.kind === 'booking')    return { kind: 'booking',    booking:    e.extendedProps.booking! };
-    if (e.extendedProps.kind === 'training')   return { kind: 'training',   training:   e.extendedProps.training! };
-    /* certSession */ return { kind: 'certSession', requests: e.extendedProps.requests! };
+    if (e.extendedProps.kind === 'training') return { kind: 'training', training: e.extendedProps.training! };
+    return { kind: 'booking', bookings: e.extendedProps.bookings! };
   });
   return {
     id: `cluster-${group.map((e) => e.id).join('_')}`,
@@ -118,165 +113,103 @@ function makeClusterEvent(group: VisibleFCEvent[]) {
 interface Props {
   bookings: Booking[];
   trainings?: Training[];
-  certSessions?: CertificationRequest[];
+  maintenances?: Maintenance[];
   isAdmin?: boolean;
   currentUserId?: string;
   businessHours?: BusinessHours[];
   onSlotClick: (date: Date) => void;
   onTrainingClick?: (training: Training) => void;
+  onMaintenanceClick?: (maintenance: Maintenance) => void;
   onCancelBooking?: (id: string) => Promise<void>;
-  onUpdateBooking?: (id: string, data: UpdateBookingDto) => Promise<void>;
-  onCancelCertSession?: (requestIds: string[]) => Promise<void>;
+  onEditBooking?: (bookings: Booking[]) => void;
 }
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
-type DetailModal =
-  | { kind: 'booking'; booking: Booking }
-  | { kind: 'certSession'; requests: CertificationRequest[] }
-  | null;
+type DetailModal = { kind: 'booking'; bookings: Booking[] } | null;
 
 type ClusterModal = { date: Date; items: ClusterItem[] } | null;
 
 export default function CalendarView({
   bookings,
   trainings = [],
-  certSessions = [],
+  maintenances = [],
   isAdmin = false,
   currentUserId,
   businessHours = [],
   onSlotClick,
   onTrainingClick,
+  onMaintenanceClick,
   onCancelBooking,
-  onUpdateBooking,
-  onCancelCertSession,
+  onEditBooking,
 }: Props) {
   const [detail, setDetail] = useState<DetailModal>(null);
   const [clusterModal, setClusterModal] = useState<ClusterModal>(null);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
 
-  // Estado del formulario de edición de reserva
-  const [editMode, setEditMode] = useState(false);
-  const [editDate, setEditDate] = useState('');
-  const [editStart, setEditStart] = useState('');
-  const [editEnd, setEditEnd] = useState('');
-  const [editNotes, setEditNotes] = useState('');
-  const [editLoading, setEditLoading] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
   const [confirmCancelBooking, setConfirmCancelBooking] = useState(false);
-  const [cancelCertLoading, setCancelCertLoading] = useState(false);
-
-  const openEditMode = (b: Booking) => {
-    const start = new Date(b.startTime);
-    const end = new Date(b.endTime);
-    setEditDate(format(start, 'yyyy-MM-dd'));
-    setEditStart(`${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`);
-    setEditEnd(`${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`);
-    setEditNotes(b.notes ?? '');
-    setEditError(null);
-    setConfirmCancelBooking(false);
-    setEditMode(true);
-  };
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const closeDetail = () => {
     setDetail(null);
-    setEditMode(false);
-    setEditError(null);
     setConfirmCancelBooking(false);
-  };
-
-  const handleEditSave = async () => {
-    if (!detail || detail.kind !== 'booking') return;
-    if (!isValidTime(editStart) || !isValidTime(editEnd)) {
-      setEditError('Las horas deben estar en formato HH:MM');
-      return;
-    }
-    if (editEnd <= editStart) {
-      setEditError('La hora de fin debe ser posterior a la hora de inicio');
-      return;
-    }
-    setEditLoading(true);
-    setEditError(null);
-    try {
-      const startIso = new Date(`${editDate}T${editStart}:00`).toISOString();
-      const endIso   = new Date(`${editDate}T${editEnd}:00`).toISOString();
-      await onUpdateBooking!(detail.booking.id, {
-        startTime: startIso, endTime: endIso, notes: editNotes,
-        localDate: editDate, localStartTime: editStart, localEndTime: editEnd,
-      });
-      closeDetail();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setEditError(msg ?? 'Error al actualizar la reserva');
-    } finally {
-      setEditLoading(false);
-    }
   };
 
   const handleCancelBooking = async () => {
     if (!detail || detail.kind !== 'booking') return;
-    setEditLoading(true);
+    setCancelLoading(true);
     try {
-      await onCancelBooking!(detail.booking.id);
+      for (const booking of detail.bookings) {
+        await onCancelBooking!(booking.id);
+      }
       closeDetail();
     } catch {
-      setEditError('Error al cancelar la reserva');
+      // error manejado vía toast en CalendarPage
     } finally {
-      setEditLoading(false);
-    }
-  };
-
-  const handleCancelCertSession = async () => {
-    if (!detail || detail.kind !== 'certSession') return;
-    setCancelCertLoading(true);
-    try {
-      await onCancelCertSession!(detail.requests.map((r) => r.id));
-      closeDetail();
-    } catch {
-      // error gestionado vía toast en CalendarPage
-    } finally {
-      setCancelCertLoading(false);
+      setCancelLoading(false);
     }
   };
 
   const handleClusterItemClick = (item: ClusterItem) => {
     setClusterModal(null);
     if (item.kind === 'booking') {
-      setDetail({ kind: 'booking', booking: item.booking });
+      setDetail({ kind: 'booking', bookings: item.bookings });
     } else if (item.kind === 'training') {
       if (onTrainingClick) onTrainingClick(item.training);
-    } else {
-      setDetail({ kind: 'certSession', requests: item.requests });
     }
   };
 
   // ─── Eventos de calendario ──────────────────────────────────────────────
 
-  // Mapa de sesiones de certificación (reutilizado en dateClick)
-  const sessionMap = useMemo(() => {
-    const map = new Map<string, CertificationRequest[]>();
-    for (const r of certSessions) {
-      if (!r.scheduledDate) continue;
-      if (!map.has(r.scheduledDate)) map.set(r.scheduledDate, []);
-      map.get(r.scheduledDate)!.push(r);
+  // Agrupa reservas por sesión (mismo usuario + horario + propósito)
+  const bookingGroups = useMemo(() => {
+    const map = new Map<string, Booking[]>();
+    for (const b of bookings) {
+      const key = `${b.userId}_${b.startTime}_${b.endTime}_${b.purpose}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
     }
-    return map;
-  }, [certSessions]);
+    return Array.from(map.values());
+  }, [bookings]);
 
   // Eventos visibles (no-background) antes de agrupar
   const rawVisibleEvents = useMemo<VisibleFCEvent[]>(() => {
     const all: VisibleFCEvent[] = [];
 
-    bookings.forEach((b) => {
-      const color = b.resource.category?.color ?? '#6b7280';
+    bookingGroups.forEach((group) => {
+      const first = group[0];
+      const color = first.resource.category?.color ?? '#6b7280';
+      const isMulti = group.length > 1;
+      const key = `${first.userId}_${first.startTime}_${first.endTime}_${first.purpose}`;
       all.push({
-        id: `booking-${b.id}`,
-        start: b.startTime,
-        end: b.endTime,
-        backgroundColor: color,
-        borderColor: color,
+        id: `booking-group-${key}`,
+        title: first.user.name,
+        start: first.startTime,
+        end: first.endTime,
+        backgroundColor: isMulti ? 'transparent' : color,
+        borderColor: isMulti ? '#4f46e5' : color,
         textColor: '#fff',
-        extendedProps: { kind: 'booking', booking: b },
+        extendedProps: { kind: 'booking', bookings: group },
       });
     });
 
@@ -293,25 +226,12 @@ export default function CalendarView({
       });
     });
 
-    sessionMap.forEach((reqs, date) => {
-      all.push({
-        id: `cert-session-${date}`,
-        start: date,
-        end: new Date(new Date(date).getTime() + 60 * 60 * 1000).toISOString(),
-        backgroundColor: '#7c3aed',
-        borderColor: '#6d28d9',
-        textColor: '#fff',
-        editable: false,
-        extendedProps: { kind: 'certSession', requests: reqs },
-      });
-    });
-
     return all;
-  }, [bookings, trainings, sessionMap]);
+  }, [bookings, trainings]);
 
-  // Eventos agrupados + fondos de capacitación
+  // Eventos agrupados + fondos de capacitación + mantenciones
   const events = useMemo(() => {
-    const bgEvents = trainings.map((t) => ({
+    const bgTrainings = trainings.map((t) => ({
       id: `training-bg-${t.id}`,
       start: t.startTime,
       end: t.endTime,
@@ -320,8 +240,29 @@ export default function CalendarView({
       extendedProps: { kind: 'trainingBg' as const, training: t },
     }));
 
-    return [...bgEvents, ...clusterVisibleEvents(rawVisibleEvents)];
-  }, [rawVisibleEvents, trainings]);
+    const bgMaintenances = maintenances.map((m) => ({
+      id: `maintenance-bg-${m.id}`,
+      start: m.startTime,
+      end: m.endTime,
+      display: 'background' as const,
+      color: '#fecaca', // rojo claro
+      extendedProps: { kind: 'maintenanceBg' as const, maintenance: m },
+    }));
+
+    // Eventos de mantención visibles (con etiqueta)
+    const maintenanceLabels = maintenances.map((m) => ({
+      id: `maintenance-label-${m.id}`,
+      start: m.startTime,
+      end: m.endTime,
+      backgroundColor: '#dc2626',
+      borderColor: '#b91c1c',
+      textColor: '#fff',
+      editable: false as const,
+      extendedProps: { kind: 'maintenance' as const, maintenance: m },
+    }));
+
+    return [...bgTrainings, ...bgMaintenances, ...maintenanceLabels, ...clusterVisibleEvents(rawVisibleEvents)];
+  }, [rawVisibleEvents, trainings, maintenances]);
 
   // ─── Horarios de negocio FullCalendar ───────────────────────────────────
 
@@ -339,26 +280,32 @@ export default function CalendarView({
 
   const handleDateClick = (info: { date: Date }) => {
     const date = info.date;
+    const ms = date.getTime();
+
+    // Si hay una mantención activa en este slot, abrir su detalle
+    const activeMaintenance = maintenances.find((m) =>
+      ms >= new Date(m.startTime).getTime() && ms < new Date(m.endTime).getTime()
+    );
+    if (activeMaintenance) {
+      if (onMaintenanceClick) onMaintenanceClick(activeMaintenance);
+      return;
+    }
+
     if (businessHours.length > 0 && !isWithinBusinessHours(date, businessHours)) {
       setShowClosedPopup(true);
       return;
     }
 
-    const ms = date.getTime();
     const items: ClusterItem[] = [];
 
-    bookings.forEach((b) => {
-      if (ms >= new Date(b.startTime).getTime() && ms < new Date(b.endTime).getTime())
-        items.push({ kind: 'booking', booking: b });
+    bookingGroups.forEach((group) => {
+      const bS = new Date(group[0].startTime).getTime();
+      const bE = new Date(group[0].endTime).getTime();
+      if (ms >= bS && ms < bE) items.push({ kind: 'booking', bookings: group });
     });
     trainings.forEach((t) => {
       if (ms >= new Date(t.startTime).getTime() && ms < new Date(t.endTime).getTime())
         items.push({ kind: 'training', training: t });
-    });
-    sessionMap.forEach((reqs, dateKey) => {
-      const start = new Date(dateKey).getTime();
-      if (ms >= start && ms < start + 60 * 60 * 1000)
-        items.push({ kind: 'certSession', requests: reqs });
     });
 
     if (items.length > 0) {
@@ -418,7 +365,7 @@ export default function CalendarView({
             if (props.isCluster) {
               const items = props.clusterItems as ClusterItem[];
               const typeLabels = items.map((it) =>
-                it.kind === 'booking' ? it.booking.resource.name
+                it.kind === 'booking' ? it.bookings[0].user.name
                 : it.kind === 'training' ? it.training.title
                 : 'Certificación'
               );
@@ -449,47 +396,80 @@ export default function CalendarView({
               );
             }
 
-            // Cert session individual
-            if (props.kind === 'certSession') {
-              const reqs = props.requests as CertificationRequest[];
+            // Mantención individual
+            if (props.kind === 'maintenance') {
+              const m = props.maintenance as Maintenance;
               return (
                 <div className="p-1 overflow-hidden">
-                  <p className="font-semibold text-xs truncate">Sesión de Certificación</p>
-                  <p className="text-xs opacity-90">{reqs.length} usuaria{reqs.length !== 1 ? 's' : ''}</p>
+                  <p className="font-semibold text-xs truncate">🔧 {m.title}</p>
+                  {m.description && <p className="text-xs opacity-80 truncate">{m.description}</p>}
                 </div>
               );
             }
 
-            // Booking individual
-            const b = props.booking as Booking;
+            // Booking (group: 1 evento por sesión de usuaria)
+            const bGroup = props.bookings as Booking[];
+            const first = bGroup?.[0];
+            if (!first) return null;
+            const isMulti = bGroup.length > 1;
+            if (isMulti) {
+              return (
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 50%, #dc2626 100%)', borderRadius: 'inherit', overflow: 'hidden' }}>
+                  <div className="p-1 h-full flex flex-col justify-between">
+                    <div>
+                      <p className="font-semibold text-xs truncate text-white">{first.user.name}</p>
+                      <p className="text-xs truncate text-white/80">
+                        {bGroup.length} máquinas · {bGroup.map((b) => b.resource.name).join(', ')}
+                      </p>
+                      <p className="text-xs text-white/70">{PURPOSE_LABELS[first.purpose]}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div className="p-1 overflow-hidden h-full flex flex-col justify-between">
                 <div>
-                  <p className="font-semibold text-xs truncate">{b.resource.name}</p>
-                  <p className="text-xs opacity-90 truncate">{b.user.name}</p>
-                  <p className="text-xs opacity-75">{PURPOSE_LABELS[b.purpose]}</p>
+                  <p className="font-semibold text-xs truncate">{first.user.name}</p>
+                  <p className="text-xs opacity-80 truncate">
+                    {bGroup.map((b) => b.resource.name).join(', ')}
+                  </p>
+                  <p className="text-xs opacity-75">{PURPOSE_LABELS[first.purpose]}</p>
                 </div>
               </div>
             );
           }}
           eventClick={(info) => {
             const props = info.event.extendedProps;
-            if (props.kind === 'trainingBg') return;
+            if (props.kind === 'trainingBg' || props.kind === 'maintenanceBg') return;
 
-            if (props.isCluster) {
-              setClusterModal({ date: info.event.start!, items: props.clusterItems as ClusterItem[] });
+            // Mantención: abrir detalle directo (no aplica cluster)
+            if (props.kind === 'maintenance') {
+              if (onMaintenanceClick) onMaintenanceClick(props.maintenance as Maintenance);
               return;
             }
-            if (props.kind === 'certSession') {
-              setDetail({ kind: 'certSession', requests: props.requests as CertificationRequest[] });
-              return;
-            }
-            if (props.kind === 'training') {
-              if (onTrainingClick) onTrainingClick(props.training as Training);
-              return;
-            }
-            if (props.kind === 'booking') {
-              setDetail({ kind: 'booking', booking: props.booking as Booking });
+
+            // Para cualquier evento (cluster o individual), recolectar todas las
+            // actividades que se solapan con el rango del evento clickeado y mostrar
+            // siempre el cluster modal. Esto permite ver el detalle O agregar algo nuevo.
+            const evStart = info.event.start!.getTime();
+            const evEnd   = info.event.end   ? info.event.end.getTime()
+                                             : evStart + 30 * 60 * 1000;
+            const items: ClusterItem[] = [];
+
+            bookingGroups.forEach((group) => {
+              const bS = new Date(group[0].startTime).getTime();
+              const bE = new Date(group[0].endTime).getTime();
+              if (bS < evEnd && bE > evStart) items.push({ kind: 'booking', bookings: group });
+            });
+            trainings.forEach((t) => {
+              const tS = new Date(t.startTime).getTime();
+              const tE = new Date(t.endTime).getTime();
+              if (tS < evEnd && tE > evStart) items.push({ kind: 'training', training: t });
+            });
+
+            if (items.length > 0) {
+              setClusterModal({ date: info.event.start!, items });
             }
           }}
           nowIndicator
@@ -551,40 +531,44 @@ export default function CalendarView({
                     onClick={() => handleClusterItemClick(item)}
                     className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-2.5 text-sm transition-colors"
                   >
-                    {item.kind === 'booking' && (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: item.booking.resource.category?.color ?? '#6b7280' }} />
-                          <span className="font-medium text-gray-900">{item.booking.resource.name}</span>
-                          <span className="text-gray-300">·</span>
-                          <span className="text-gray-600 truncate">{item.booking.user.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5 ml-4">
-                          <p className="text-xs text-gray-400">{PURPOSE_LABELS[item.booking.purpose]}</p>
-                          <span className="text-gray-300">·</span>
-                          <p className="text-xs text-gray-400">
-                            {new Date(item.booking.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                            {' – '}
-                            {new Date(item.booking.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                          </p>
-                        </div>
-                      </>
-                    )}
+                    {item.kind === 'booking' && (() => {
+                      const first = item.bookings[0];
+                      const isMulti = item.bookings.length > 1;
+                      return (
+                        <>
+                          <div className="flex items-center gap-2">
+                            {isMulti ? (
+                              <div className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed, #dc2626)' }} />
+                            ) : (
+                              <div className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: first.resource.category?.color ?? '#6b7280' }} />
+                            )}
+                            <span className="font-medium text-gray-900">{first.user.name}</span>
+                            <span className="text-xs text-gray-400">
+                              {new Date(first.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                              {' – '}
+                              {new Date(first.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                            </span>
+                          </div>
+                          <div className="mt-1 space-y-0.5">
+                            {item.bookings.map((b) => (
+                              <div key={b.id} className="flex items-center gap-1.5 ml-1">
+                                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }} />
+                                <span className="text-xs text-gray-500">{b.resource.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
                     {item.kind === 'training' && (
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full flex-shrink-0 bg-amber-400" />
                         <span className="font-medium text-gray-900">{item.training.title}</span>
                         <span className="text-gray-300">·</span>
                         <span className="text-xs text-amber-600">Capacitación</span>
-                      </div>
-                    )}
-                    {item.kind === 'certSession' && (
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-purple-500" />
-                        <span className="font-medium text-gray-900">Sesión de Certificación</span>
-                        <span className="text-gray-300">·</span>
-                        <span className="text-xs text-purple-600">{item.requests.length} usuaria{item.requests.length !== 1 ? 's' : ''}</span>
                       </div>
                     )}
                   </button>
@@ -607,50 +591,82 @@ export default function CalendarView({
 
       {/* ── Modal de detalle de reserva ──────────────────────────────────── */}
       {detail?.kind === 'booking' && (() => {
-        const b = detail.booking;
-        const canEdit = isAdmin || currentUserId === b.userId;
-        const purposeText = b.purpose === 'PRODUCE'
-          ? `Producir: ${b.produceItem} x${b.produceQty}`
-          : PURPOSE_LABELS[b.purpose];
+        const first = detail.bookings[0];
+        const canEdit = isAdmin || currentUserId === first.userId;
+        const purposeText = first.purpose === 'PRODUCE'
+          ? `Producir: ${first.produceItem} x${first.produceQty}`
+          : PURPOSE_LABELS[first.purpose];
+        const isActive = first.status !== 'CANCELLED' && first.status !== 'REJECTED';
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-            onClick={() => !editLoading && closeDetail()}>
+            onClick={closeDetail}>
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">
-                  {editMode ? 'Editar reserva' : 'Detalle de reserva'}
-                </h3>
-                <button onClick={closeDetail} disabled={editLoading}
-                  className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors disabled:opacity-40">
+                <h3 className="font-semibold text-gray-900">Detalle de reserva</h3>
+                <button onClick={closeDetail}
+                  className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
-              {!editMode ? (
+              {confirmCancelBooking ? (
+                <div className="space-y-4">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">¿Confirmas que deseas cancelar esta reserva?</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setConfirmCancelBooking(false)} disabled={cancelLoading}
+                      className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60">
+                      Volver
+                    </button>
+                    <button onClick={handleCancelBooking} disabled={cancelLoading}
+                      className="flex-1 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60">
+                      {cancelLoading ? 'Cancelando...' : 'Sí, cancelar'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <>
                   <div className="space-y-2 text-sm">
-                    <p><span className="font-medium text-gray-700">Recurso:</span> <span className="text-gray-900">{b.resource.name}</span></p>
-                    <p><span className="font-medium text-gray-700">Usuaria:</span> <span className="text-gray-900">{b.user.name}</span></p>
+                    <p><span className="font-medium text-gray-700">Usuaria:</span> <span className="text-gray-900">{first.user.name}</span></p>
                     <p>
                       <span className="font-medium text-gray-700">Horario:</span>{' '}
                       <span className="text-gray-900">
-                        {new Date(b.startTime).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
-                        {new Date(b.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {new Date(first.startTime).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
+                        {new Date(first.startTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
                         {' – '}
-                        {new Date(b.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {new Date(first.endTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false })}
                       </span>
                     </p>
                     <p><span className="font-medium text-gray-700">Propósito:</span> <span className="text-gray-900">{purposeText}</span></p>
-                    {b.notes && <p><span className="font-medium text-gray-700">Notas:</span> <span className="text-gray-900">{b.notes}</span></p>}
+                    <div>
+                      <p className="font-medium text-gray-700 mb-1">Máquinas:</p>
+                      <div className="space-y-1">
+                        {detail.bookings.map((b) => (
+                          <div key={b.id} className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }} />
+                            <span className="text-gray-900">{b.resource.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {first.notes && <p><span className="font-medium text-gray-700">Notas:</span> <span className="text-gray-900">{first.notes}</span></p>}
                   </div>
                   <div className="flex gap-2 mt-5">
-                    {canEdit && b.status !== 'CANCELLED' && b.status !== 'REJECTED' && (onUpdateBooking || onCancelBooking) && (
-                      <button onClick={() => openEditMode(b)}
+                    {canEdit && isActive && onEditBooking && (
+                      <button onClick={() => { closeDetail(); onEditBooking(detail.bookings); }}
                         className="flex-1 bg-brand-50 hover:bg-brand-100 text-brand-700 text-sm font-medium py-2 rounded-lg border border-brand-200 transition-colors">
                         Editar
+                      </button>
+                    )}
+                    {canEdit && isActive && onCancelBooking && (
+                      <button onClick={() => setConfirmCancelBooking(true)}
+                        className="px-3 py-2 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
+                        Cancelar
                       </button>
                     )}
                     <button onClick={closeDetail}
@@ -659,120 +675,12 @@ export default function CalendarView({
                     </button>
                   </div>
                 </>
-              ) : (
-                <>
-                  {confirmCancelBooking ? (
-                    <div className="space-y-4">
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                        <p className="text-sm text-red-700">¿Confirmas que deseas cancelar esta reserva?</p>
-                      </div>
-                      {editError && <p className="text-xs text-red-600">{editError}</p>}
-                      <div className="flex gap-2">
-                        <button onClick={() => setConfirmCancelBooking(false)} disabled={editLoading}
-                          className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60">
-                          Volver
-                        </button>
-                        <button onClick={handleCancelBooking} disabled={editLoading}
-                          className="flex-1 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60">
-                          {editLoading ? 'Cancelando...' : 'Sí, cancelar'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Fecha</label>
-                        <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Hora inicio</label>
-                          <input type="text" value={editStart}
-                            onChange={(e) => setEditStart(formatTimeInput(e.target.value))}
-                            placeholder="HH:MM" maxLength={5}
-                            className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${editStart && !isValidTime(editStart) ? 'border-red-400' : 'border-gray-300'}`} />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Hora fin</label>
-                          <input type="text" value={editEnd}
-                            onChange={(e) => setEditEnd(formatTimeInput(e.target.value))}
-                            placeholder="HH:MM" maxLength={5}
-                            className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${editEnd && (!isValidTime(editEnd) || editEnd <= editStart) ? 'border-red-400' : 'border-gray-300'}`} />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-                        <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none" />
-                      </div>
-                      {editError && <p className="text-xs text-red-600">{editError}</p>}
-                      <div className="flex gap-2">
-                        <button onClick={() => { setEditMode(false); setEditError(null); }} disabled={editLoading}
-                          className="flex-1 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60">
-                          ← Volver
-                        </button>
-                        {onCancelBooking && (
-                          <button onClick={() => setConfirmCancelBooking(true)} disabled={editLoading}
-                            className="px-3 py-2 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60">
-                            Cancelar reserva
-                          </button>
-                        )}
-                        {onUpdateBooking && (
-                          <button onClick={handleEditSave} disabled={editLoading}
-                            className="flex-1 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-60">
-                            {editLoading ? 'Guardando...' : 'Guardar'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </>
               )}
             </div>
           </div>
         );
       })()}
 
-      {/* ── Modal de sesión de certificación ────────────────────────────── */}
-      {detail?.kind === 'certSession' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-          onClick={() => setDetail(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Sesión de Certificación</h3>
-              <button onClick={() => setDetail(null)}
-                className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full p-1 -m-1 transition-colors">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <ul className="space-y-1.5 text-sm text-gray-700 mb-4">
-              {detail.requests.map((r) => (
-                <li key={r.id} className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
-                  <span>{r.user?.name ?? r.userId}</span>
-                  <span className="text-gray-400">—</span>
-                  <span className="text-gray-500">{r.category?.name ?? r.categoryId}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              {isAdmin && onCancelCertSession && (
-                <button onClick={handleCancelCertSession} disabled={cancelCertLoading}
-                  className="flex-1 py-2 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-60">
-                  {cancelCertLoading ? 'Cancelando...' : 'Cancelar sesión'}
-                </button>
-              )}
-              <button onClick={() => setDetail(null)}
-                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2 rounded-lg transition-colors">
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

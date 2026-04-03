@@ -7,10 +7,26 @@ import LoadingSpinner from '../../components/shared/LoadingSpinner';
 import SortableHeader, { SortState, toggleSort, compareVals } from '../../components/shared/SortableHeader';
 import toast from 'react-hot-toast';
 
+// Naranja/ámbar reservado para Capacitaciones — no disponible para categorías
 const PRESET_COLORS = [
-  '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
-  '#ef4444', '#f97316', '#6b7280', '#06b6d4', '#84cc16', '#0ea5e9',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#10b981',
+  '#ef4444', '#6b7280', '#06b6d4', '#84cc16', '#0ea5e9',
+  '#a855f7', '#14b8a6', '#e11d48',
 ];
+
+// Devuelve true si el color cae en el rango naranja/ámbar (hue 20–55°)
+function isOrangeHue(hex: string): boolean {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  if (max === min) return false;
+  let h = 0;
+  if (max === r) h = ((g - b) / (max - min) + 6) % 6 * 60;
+  else if (max === g) h = ((b - r) / (max - min) + 2) * 60;
+  else h = ((r - g) / (max - min) + 4) * 60;
+  return h >= 20 && h <= 55;
+}
 
 interface FormState {
   name: string;
@@ -77,6 +93,7 @@ export default function CategoriesPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('El nombre es requerido'); return; }
+    if (isOrangeHue(form.color)) { toast.error('El naranja/ámbar está reservado para Capacitaciones'); return; }
     setSaving(true);
     try {
       if (editing) {
@@ -273,6 +290,11 @@ export default function CategoriesPage() {
                   />
                   <span className="text-xs text-gray-500 font-mono">{form.color}</span>
                 </div>
+                {isOrangeHue(form.color) && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <span>⚠️</span> El naranja/ámbar está reservado para Capacitaciones
+                  </p>
+                )}
               </div>
               <div className="flex gap-3 pt-2">
                 <button

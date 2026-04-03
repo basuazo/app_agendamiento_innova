@@ -20,6 +20,7 @@ import settingsRoutes from './routes/settings.routes';
 import spaceRoutes from './routes/space.routes';
 import categoryRoutes from './routes/category.routes';
 import notificationRoutes from './routes/notification.routes';
+import maintenanceRoutes from './routes/maintenance.routes';
 
 // ── Validación de variables de entorno críticas ───────────────────────────────
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET'] as const;
@@ -99,6 +100,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api', trainingRoutes);
 app.use('/api', certificationRoutes);
 app.use('/api', settingsRoutes);
+app.use('/api', maintenanceRoutes);
 
 // SPA fallback (solo en producción, para react-router)
 if (process.env.NODE_ENV === 'production') {

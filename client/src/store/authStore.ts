@@ -11,7 +11,7 @@ interface AuthState {
   register: (name: string, email: string, password: string, spaceId: string, organization: string) => Promise<void>;
   logout: () => void;
   loadUser: () => Promise<void>;
-  updateProfile: (data: { name?: string; email?: string; organization?: string }) => Promise<void>;
+  updateProfile: (data: { name?: string; email?: string; organization?: string; phone?: string }) => Promise<void>;
   setCurrentSpace: (spaceId: string | null) => void;
 }
 

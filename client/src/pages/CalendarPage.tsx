@@ -2,15 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useBookingStore } from '../store/bookingStore';
 import { useResourceStore } from '../store/resourceStore';
 import { useAuthStore } from '../store/authStore';
-import { Training, CertificationRequest, BusinessHours, User } from '../types';
+import { Training, BusinessHours, User, Maintenance } from '../types';
 import { trainingService } from '../services/training.service';
-import { certificationService } from '../services/certification.service';
-import { bookingService, UpdateBookingDto } from '../services/booking.service';
+import { bookingService } from '../services/booking.service';
+import { maintenanceService } from '../services/maintenance.service';
 import { settingsService } from '../services/settings.service';
 import { userService } from '../services/user.service';
 import CalendarView from '../components/calendar/CalendarView';
-import BookingModal from '../components/booking/BookingModal';
+import BookingWizard from '../components/booking/BookingWizard';
+import ExceptionalBookingModal from '../components/booking/ExceptionalBookingModal';
 import TrainingModal from '../components/admin/TrainingModal';
+import MaintenanceModal from '../components/admin/MaintenanceModal';
 import ConfirmModal from '../components/shared/ConfirmModal';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -92,24 +94,31 @@ export default function CalendarPage() {
   const { resources, fetchAll: fetchResources } = useResourceStore();
 
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
+  const [editBookings, setEditBookings] = useState<import('../types').Booking[] | undefined>(undefined);
+  const [exceptionalModalOpen, setExceptionalModalOpen] = useState(false);
   const [trainingModalOpen, setTrainingModalOpen] = useState(false);
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
   const [editingTraining, setEditingTraining] = useState<Training | null>(null);
+  const [editingMaintenance, setEditingMaintenance] = useState<Maintenance | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>();
   const [selectedHour, setSelectedHour] = useState<number | undefined>();
   const [actionChoice, setActionChoice] = useState<{ date: Date } | null>(null);
   const [trainings, setTrainings] = useState<Training[]>([]);
-  const [certSessions, setCertSessions] = useState<CertificationRequest[]>([]);
+  const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
   const [maxBookingMinutes, setMaxBookingMinutes] = useState<number>(240);
   const [hoursLoaded, setHoursLoaded] = useState(false);
   const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
+  const [selectedMaintenance, setSelectedMaintenance] = useState<Maintenance | null>(null);
   const [confirmDeleteTraining, setConfirmDeleteTraining] = useState<Training | null>(null);
+  const [confirmDeleteMaintenance, setConfirmDeleteMaintenance] = useState<Maintenance | null>(null);
   const [enrollLoading, setEnrollLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [enrollTargetId, setEnrollTargetId] = useState('');
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
   const canManageTrainings = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA';
+  const canManageMaintenance = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const fetchTrainings = async () => {
     try {
@@ -122,11 +131,10 @@ export default function CalendarPage() {
     }
   };
 
-  const fetchCertSessions = async () => {
-    if (!isAdmin) return;
+  const fetchMaintenances = async () => {
     try {
-      const data = await certificationService.getAllRequests('SCHEDULED');
-      setCertSessions(data);
+      const data = await maintenanceService.getAll();
+      setMaintenances(data);
     } catch {
       // silent
     }
@@ -149,7 +157,7 @@ export default function CalendarPage() {
     fetchAll();
     fetchResources();
     fetchTrainings();
-    fetchCertSessions();
+    fetchMaintenances();
     fetchBusinessHours();
     if (isAdmin) {
       userService.getAll().then(setUsers).catch(() => {});
@@ -177,11 +185,45 @@ export default function CalendarPage() {
     setTrainingModalOpen(true);
   };
 
+  const handleChooseExceptional = () => {
+    setActionChoice(null);
+    setExceptionalModalOpen(true);
+  };
+
+  const handleChooseMaintenance = () => {
+    setActionChoice(null);
+    setEditingMaintenance(null);
+    setMaintenanceModalOpen(true);
+  };
+
+  const handleMaintenanceClick = (maintenance: Maintenance) => {
+    setSelectedMaintenance(maintenance);
+  };
+
+  const handleDeleteMaintenance = async () => {
+    if (!confirmDeleteMaintenance) return;
+    try {
+      await maintenanceService.remove(confirmDeleteMaintenance.id);
+      toast.success('Mantención eliminada');
+      setConfirmDeleteMaintenance(null);
+      setSelectedMaintenance(null);
+      fetchMaintenances();
+    } catch {
+      toast.error('Error al eliminar la mantención');
+    }
+  };
+
   const handleBookingModalClose = () => {
     setBookingModalOpen(false);
+    setEditBookings(undefined);
     setSelectedDate(undefined);
     setSelectedHour(undefined);
     fetchAll();
+  };
+
+  const handleEditBooking = (bookings: import('../types').Booking[]) => {
+    setEditBookings(bookings);
+    setBookingModalOpen(true);
   };
 
   const handleTrainingModalClose = () => {
@@ -282,17 +324,6 @@ export default function CalendarPage() {
     fetchAll();
   };
 
-  const handleUpdateBooking = async (id: string, data: UpdateBookingDto) => {
-    await bookingService.update(id, data);
-    toast.success('Reserva actualizada');
-    fetchAll();
-  };
-
-  const handleCancelCertSession = async (requestIds: string[]) => {
-    await certificationService.cancelSession(requestIds);
-    toast.success('Sesión cancelada. Las solicitudes volvieron a pendiente.');
-    fetchCertSessions();
-  };
 
   const calendarReady = !isLoading && hoursLoaded;
 
@@ -328,6 +359,28 @@ export default function CalendarPage() {
               Capacitación
             </button>
           )}
+          {canManageMaintenance && (
+            <button
+              onClick={() => { setExceptionalModalOpen(true); setSelectedDate(undefined); }}
+              className="inline-flex items-center gap-2 bg-orange-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Hora Excepcional
+            </button>
+          )}
+          {canManageMaintenance && (
+            <button
+              onClick={() => { setEditingMaintenance(null); setMaintenanceModalOpen(true); setSelectedDate(undefined); }}
+              className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Mantención
+            </button>
+          )}
         </div>
       </div>
 
@@ -351,10 +404,10 @@ export default function CalendarPage() {
               <span className="text-xs text-gray-600">Capacitación</span>
             </div>
           )}
-          {certSessions.length > 0 && (
+          {maintenances.length > 0 && (
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#7c3aed' }} />
-              <span className="text-xs text-gray-600">Sesión Certificación</span>
+              <div className="w-3 h-3 rounded-full bg-red-600" />
+              <span className="text-xs text-gray-600">Mantención / Cierre</span>
             </div>
           )}
         </div>
@@ -366,15 +419,15 @@ export default function CalendarPage() {
         <CalendarView
           bookings={bookings}
           trainings={trainings}
-          certSessions={isAdmin ? certSessions : []}
+          maintenances={maintenances}
           isAdmin={isAdmin}
           currentUserId={user?.id}
           businessHours={businessHours}
           onSlotClick={handleSlotClick}
           onTrainingClick={handleTrainingClick}
+          onMaintenanceClick={handleMaintenanceClick}
           onCancelBooking={handleCancelBooking}
-          onUpdateBooking={handleUpdateBooking}
-          onCancelCertSession={isAdmin ? handleCancelCertSession : undefined}
+          onEditBooking={handleEditBooking}
         />
       )}
 
@@ -405,6 +458,22 @@ export default function CalendarPage() {
                   Bloquear para Capacitación
                 </button>
               )}
+              {canManageMaintenance && (
+                <button
+                  onClick={handleChooseExceptional}
+                  className="w-full py-3 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors"
+                >
+                  Hora Excepcional
+                </button>
+              )}
+              {canManageMaintenance && (
+                <button
+                  onClick={handleChooseMaintenance}
+                  className="w-full py-3 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-colors"
+                >
+                  Mantención / Cierre
+                </button>
+              )}
               <button
                 onClick={() => setActionChoice(null)}
                 className="w-full py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
@@ -416,12 +485,13 @@ export default function CalendarPage() {
         </div>
       )}
 
-      <BookingModal
+      <BookingWizard
         isOpen={bookingModalOpen}
         onClose={handleBookingModalClose}
-        preselectedDate={selectedDate}
+        preselectedDate={editBookings ? undefined : selectedDate}
         businessHours={businessHours}
         maxBookingMinutes={maxBookingMinutes}
+        editBookings={editBookings}
       />
 
       <TrainingModal
@@ -431,6 +501,21 @@ export default function CalendarPage() {
         preselectedDate={selectedDate}
         preselectedHour={selectedHour}
         initialTraining={editingTraining ?? undefined}
+      />
+
+      <ExceptionalBookingModal
+        isOpen={exceptionalModalOpen}
+        onClose={() => { setExceptionalModalOpen(false); setSelectedDate(undefined); fetchAll(); }}
+        resources={resources}
+        preselectedDate={selectedDate}
+      />
+
+      <MaintenanceModal
+        isOpen={maintenanceModalOpen}
+        onClose={() => { setMaintenanceModalOpen(false); setEditingMaintenance(null); setSelectedDate(undefined); }}
+        onSaved={() => { fetchMaintenances(); }}
+        preselectedDate={selectedDate}
+        initialMaintenance={editingMaintenance ?? undefined}
       />
 
       {/* Modal detalle / inscripción de capacitación */}
@@ -626,6 +711,97 @@ export default function CalendarPage() {
           variant="danger"
           onConfirm={handleDeleteTraining}
           onCancel={() => setConfirmDeleteTraining(null)}
+        />
+      )}
+
+      {/* Modal detalle de mantención */}
+      {selectedMaintenance && (() => {
+        const m = selectedMaintenance;
+        const start = new Date(m.startTime);
+        const end = new Date(m.endTime);
+        const fmt = (d: Date) =>
+          d.toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full mb-2">
+                    <span className="w-2 h-2 rounded-full bg-red-600 inline-block" />
+                    Cierre del espacio
+                  </span>
+                  <h2 className="text-lg font-bold text-gray-900">{m.title}</h2>
+                </div>
+                <button onClick={() => setSelectedMaintenance(null)} className="text-gray-400 hover:text-gray-600 transition-colors ml-4 shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {m.description && (
+                <p className="text-sm text-gray-600 mb-4">{m.description}</p>
+              )}
+
+              <div className="space-y-2 text-sm text-gray-700 mb-5">
+                <div className="flex gap-2">
+                  <span className="text-gray-400 w-12 shrink-0">Inicio</span>
+                  <span className="font-medium">{fmt(start)}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-gray-400 w-12 shrink-0">Fin</span>
+                  <span className="font-medium">{fmt(end)}</span>
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-xs text-red-700 mb-4">
+                ⚠️ No se pueden crear reservas durante este período.
+              </div>
+
+              {canManageMaintenance && (
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => {
+                      setSelectedMaintenance(null);
+                      setEditingMaintenance(m);
+                      setMaintenanceModalOpen(true);
+                    }}
+                    className="flex-1 py-2.5 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedMaintenance(null);
+                      setConfirmDeleteMaintenance(m);
+                    }}
+                    className="flex-1 py-2.5 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={() => setSelectedMaintenance(null)}
+                className="w-full py-2 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {confirmDeleteMaintenance && (
+        <ConfirmModal
+          title="Eliminar mantención"
+          message={`¿Eliminar la mantención "${confirmDeleteMaintenance.title}"? El espacio volverá a estar disponible para reservas en ese período.`}
+          confirmLabel="Eliminar"
+          variant="danger"
+          onConfirm={handleDeleteMaintenance}
+          onCancel={() => setConfirmDeleteMaintenance(null)}
         />
       )}
     </div>

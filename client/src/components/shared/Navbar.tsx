@@ -73,7 +73,7 @@ export default function Navbar() {
   // Helpers de permisos por rol
   const role = user?.role;
   const isElevated       = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA' || role === 'LIDER_COMUNITARIA';
-  const canManageCerts   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA';
+  const canManageCerts   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA' || role === 'LIDER_COMUNITARIA';
   const canManageTrainings = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA';
   const canManageCategories = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
   const canManageUsers   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';

@@ -4,7 +4,6 @@ export type BookingPurpose = 'LEARN' | 'PRODUCE' | 'DESIGN' | 'REUNION';
 export type CommentTag = 'GENERAL' | 'MACHINE_ISSUE' | 'ORDER' | 'CLEANING';
 export type CompanionRelation = 'CUIDADOS' | 'AMISTAD' | 'OTRO';
 export type ResourceAvailabilityStatus = 'available' | 'booked' | 'blocked';
-export type CertReqStatus = 'PENDING' | 'SCHEDULED' | 'APPROVED' | 'REJECTED';
 
 export interface Category {
   id: string;
@@ -36,6 +35,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string | null;
   organization?: string | null;
   role: Role;
   spaceId?: string | null;
@@ -71,9 +71,10 @@ export interface Booking {
   attendees: number;
   companionRelation?: CompanionRelation;
   status: BookingStatus;
+  isExceptional?: boolean;
   googleCalendarEventId?: string;
   createdAt: string;
-  user: { id: string; name: string; email: string };
+  user: { id: string; name: string; email: string; organization?: string | null };
   resource: { id: string; name: string; category: Category };
 }
 
@@ -155,19 +156,6 @@ export interface Certification {
   user?: { id: string; name: string; email: string };
 }
 
-export interface CertificationRequest {
-  id: string;
-  userId: string;
-  categoryId: string;
-  category: Category;
-  status: CertReqStatus;
-  scheduledDate?: string;
-  notes?: string;
-  resolvedAt?: string;
-  createdAt: string;
-  user?: { id: string; name: string; email: string };
-}
-
 export interface BusinessHours {
   id: string;
   dayOfWeek: number; // 0=Domingo, 1=Lunes, ..., 6=Sábado
@@ -182,4 +170,41 @@ export interface SpaceSettings {
   maxCapacity: number;        // aforo general (máquinas)
   maxCapacityReunion: number; // aforo sala de reuniones
   maxBookingMinutes: number;  // duración máxima de reserva en minutos (30–240, intervalos de 30)
+}
+
+export interface Maintenance {
+  id: string;
+  title: string;
+  description?: string | null;
+  startTime: string;
+  endTime: string;
+  spaceId: string;
+  createdBy: string;
+  createdAt: string;
+  creator?: { id: string; name: string };
+}
+
+export interface BookingStats {
+  total: number;
+  pending: number;
+  confirmed: number;
+  cancelled: number;
+  rejected: number;
+}
+
+export interface UserSummaryEnrollment {
+  id: string;
+  trainingId: string;
+  userId: string;
+  status: EnrollmentStatus;
+  createdAt: string;
+  training: { id: string; title: string; startTime: string; endTime: string; capacity: number };
+}
+
+export interface UserSummary {
+  user: User;
+  bookings: (Booking & { resource: { id: string; name: string; category: Category } })[];
+  bookingStats: BookingStats;
+  enrollments: UserSummaryEnrollment[];
+  certifications: Certification[];
 }

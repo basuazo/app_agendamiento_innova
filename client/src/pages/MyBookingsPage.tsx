@@ -54,19 +54,32 @@ export default function MyBookingsPage() {
 
   // --- Lógica reservas de máquina ---
   const now = new Date();
-  const upcoming = myBookings.filter(
+
+  function groupMyBookings(list: Booking[]) {
+    const map = new Map<string, Booking[]>();
+    for (const b of list) {
+      const key = `${b.startTime}_${b.endTime}_${b.purpose}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
+    }
+    return Array.from(map.values());
+  }
+
+  const upcomingRaw = myBookings.filter(
     (b) => (b.status === 'CONFIRMED' || b.status === 'PENDING') && new Date(b.startTime) > now
   );
-  const history = myBookings.filter(
+  const historyRaw = myBookings.filter(
     (b) => b.status === 'CANCELLED' || b.status === 'REJECTED' || new Date(b.startTime) <= now
   );
-  const machineList = machineTab === 'upcoming' ? upcoming : history;
+  const upcomingGroups = groupMyBookings(upcomingRaw);
+  const historyGroups = groupMyBookings(historyRaw);
+  const machineGroups = machineTab === 'upcoming' ? upcomingGroups : historyGroups;
 
-  const handleCancel = async (id: string) => {
+  const handleCancel = async (group: Booking[]) => {
     if (!confirm('¿Seguro que deseas cancelar esta reserva?')) return;
-    setCancellingId(id);
+    setCancellingId(group[0].id);
     try {
-      await cancel(id);
+      for (const b of group) await cancel(b.id);
       toast.success('Reserva cancelada');
       fetchMine();
     } catch {
@@ -141,7 +154,7 @@ export default function MyBookingsPage() {
                 machineTab === 'upcoming' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Próximas ({upcoming.length})
+              Próximas ({upcomingGroups.length})
             </button>
             <button
               onClick={() => setMachineTab('history')}
@@ -149,13 +162,13 @@ export default function MyBookingsPage() {
                 machineTab === 'history' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Historial ({history.length})
+              Historial ({historyGroups.length})
             </button>
           </div>
 
           {isLoading ? (
             <LoadingSpinner />
-          ) : machineList.length === 0 ? (
+          ) : machineGroups.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <svg className="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -165,12 +178,12 @@ export default function MyBookingsPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {machineList.map((b) => (
-                <BookingCard
-                  key={b.id}
-                  booking={b}
+              {machineGroups.map((group) => (
+                <BookingGroupCard
+                  key={`${group[0].startTime}_${group[0].endTime}_${group[0].purpose}`}
+                  bookings={group}
                   onCancel={machineTab === 'upcoming' ? handleCancel : undefined}
-                  isCancelling={cancellingId === b.id}
+                  isCancelling={cancellingId === group[0].id}
                 />
               ))}
             </div>
@@ -296,58 +309,61 @@ export default function MyBookingsPage() {
   );
 }
 
-function BookingCard({
-  booking: b,
+function BookingGroupCard({
+  bookings,
   onCancel,
   isCancelling,
 }: {
-  booking: Booking;
-  onCancel?: (id: string) => void;
+  bookings: Booking[];
+  onCancel?: (group: Booking[]) => void;
   isCancelling: boolean;
 }) {
-  const badge = STATUS_BADGE[b.status] ?? { label: b.status, className: 'bg-gray-100 text-gray-600' };
+  const first = bookings[0];
+  const badge = STATUS_BADGE[first.status] ?? { label: first.status, className: 'bg-gray-100 text-gray-600' };
+  const faded = first.status === 'CANCELLED' || first.status === 'REJECTED';
 
   return (
-    <div className={`bg-white rounded-xl border p-4 flex items-start gap-4 ${
-      b.status === 'CANCELLED' || b.status === 'REJECTED' ? 'opacity-60 border-gray-200' : 'border-gray-100 shadow-sm'
-    }`}>
-      <div
-        className="w-3 h-full min-h-12 rounded-full flex-shrink-0 mt-1"
-        style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="font-semibold text-gray-900">{b.resource.name}</p>
-            <p className="text-sm text-gray-500">{formatDateTime(b.startTime)} — {formatDateTime(b.endTime).split(' ')[1]}</p>
-          </div>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${badge.className}`}>
-            {badge.label}
-          </span>
+    <div className={`bg-white rounded-xl border p-4 ${faded ? 'opacity-60 border-gray-200' : 'border-gray-100 shadow-sm'}`}>
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div>
+          <p className="text-sm text-gray-500">{formatDateTime(first.startTime)} — {formatDateTime(first.endTime).split(' ')[1]}</p>
         </div>
-        <div className="mt-1 flex flex-wrap gap-2">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${badge.className}`}>
+          {badge.label}
+        </span>
+      </div>
+      <div className="space-y-1.5 mb-2">
+        {bookings.map((b) => (
+          <div key={b.id} className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: b.resource.category?.color ?? '#6b7280' }} />
+            <span className="text-sm font-medium text-gray-900">{b.resource.name}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <div className="flex flex-wrap gap-2">
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-            {PURPOSE_LABELS[b.purpose]}
+            {PURPOSE_LABELS[first.purpose]}
           </span>
-          {b.purpose === 'PRODUCE' && b.produceItem && (
+          {first.purpose === 'PRODUCE' && first.produceItem && (
             <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-              {b.produceItem} x{b.produceQty}
+              {first.produceItem} x{first.produceQty}
             </span>
           )}
-          {b.notes && (
-            <span className="text-xs text-gray-400 italic truncate max-w-xs">{b.notes}</span>
+          {first.notes && (
+            <span className="text-xs text-gray-400 italic truncate max-w-xs">{first.notes}</span>
           )}
         </div>
+        {onCancel && (first.status === 'CONFIRMED' || first.status === 'PENDING') && (
+          <button
+            onClick={() => onCancel(bookings)}
+            disabled={isCancelling}
+            className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-60 flex-shrink-0"
+          >
+            {isCancelling ? '...' : 'Cancelar'}
+          </button>
+        )}
       </div>
-      {onCancel && (b.status === 'CONFIRMED' || b.status === 'PENDING') && (
-        <button
-          onClick={() => onCancel(b.id)}
-          disabled={isCancelling}
-          className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-60 flex-shrink-0"
-        >
-          {isCancelling ? '...' : 'Cancelar'}
-        </button>
-      )}
     </div>
   );
 }

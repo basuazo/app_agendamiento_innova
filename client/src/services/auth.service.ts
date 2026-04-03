@@ -10,7 +10,7 @@ export const authService = {
 
   getMe: () => api.get<User>('/auth/me').then((r) => r.data),
 
-  updateProfile: (data: { name?: string; email?: string; organization?: string }) =>
+  updateProfile: (data: { name?: string; email?: string; organization?: string; phone?: string }) =>
     api.patch<User>('/auth/me', data).then((r) => r.data),
 
   changePassword: (currentPassword: string, newPassword: string) =>

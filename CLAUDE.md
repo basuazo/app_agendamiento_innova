@@ -71,6 +71,7 @@ App para reservas/
 │       │   ├── certification.controller.ts
 │       │   ├── training.controller.ts
 │       │   ├── comment.controller.ts
+│       │   ├── maintenance.controller.ts <- NUEVO: CRUD de mantenciones
 │       │   └── settings.controller.ts
 │       ├── routes/                  <- definicion de rutas Express
 │       │   ├── auth.routes.ts
@@ -81,6 +82,7 @@ App para reservas/
 │       │   ├── certification.routes.ts
 │       │   ├── training.routes.ts
 │       │   ├── comment.routes.ts
+│       │   ├── maintenance.routes.ts <- NUEVO
 │       │   └── settings.routes.ts
 │       └── services/
 │           ├── booking.service.ts
@@ -124,24 +126,27 @@ App para reservas/
         │   │   ├── ConfirmModal.tsx    <- modal reutilizable (variant: danger|warning|success)
         │   │   └── SortableHeader.tsx  <- <th> sortable reutilizable + toggleSort + compareVals
         │   ├── booking/
-        │   │   └── BookingModal.tsx    <- wizard multi-step de reservas
+        │   │   ├── BookingWizard.tsx   <- wizard multi-paso de reservas centrado en persona (reemplaza BookingModal)
+        │   │   ├── BookingModal.tsx    <- modal legado (ya no usado en CalendarPage; conservado por compatibilidad)
+        │   │   └── ExceptionalBookingModal.tsx <- reserva excepcional sin restricciones de horario/duracion
         │   ├── calendar/
         │   │   └── CalendarView.tsx    <- FullCalendar
         │   └── admin/
         │       ├── ResourceForm.tsx
-        │       └── TrainingModal.tsx   <- crea capacitaciones (titulo, fecha, horas, cupos, exenciones)
+        │       ├── TrainingModal.tsx   <- crea/edita capacitaciones (titulo, fecha, horas, cupos, exenciones)
+        │       └── MaintenanceModal.tsx <- crea/edita mantenciones (titulo, descripcion, rango de fechas/horas)
         └── pages/
             ├── LoginPage.tsx
             ├── RegisterPage.tsx        <- selector de espacio al registrarse
             ├── CalendarPage.tsx
-            ├── MyBookingsPage.tsx
+            ├── MyBookingsPage.tsx      <- reservas unificadas: tab "Reservas de Maquina" + tab "Capacitaciones"
             ├── MyCertificationsPage.tsx
-            ├── MyTrainingsPage.tsx     <- inscripciones del usuario (filtro mis inscripciones / todas proximas)
             ├── CommunityPage.tsx
             ├── ProfilePage.tsx
             ├── admin/
             │   ├── ResourcesPage.tsx
-            │   ├── UsersPage.tsx
+            │   ├── UsersPage.tsx       <- incluye boton "Ver" (ficha de usuaria) y "Exportar Excel"
+            │   ├── UserDetailPage.tsx  <- ficha de usuaria: stats, reservas, capacitaciones, certs
             │   ├── BookingsPage.tsx
             │   ├── CertificationsPage.tsx
             │   ├── CategoriesPage.tsx  <- gestion de categorias dinamicas
@@ -234,9 +239,10 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 |--------|------------|
 | `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios. Tiene `maxCapacity` (aforo maquinas), `maxCapacityReunion` (aforo sala) y `maxBookingMinutes` (duracion maxima de reserva, 30–240 en intervalos de 30) |
 | `Category` | Categoria de maquina dinamica, pertenece a un Space (reemplaza enum ResourceCategory) |
-| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, spaceId (null para SUPER_ADMIN) y deletedAt (soft delete: null = activo) |
+| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, spaceId (null para SUPER_ADMIN), phone (opcional) y deletedAt (soft delete: null = activo) |
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
-| `Booking` | Reservas con status, purpose, campos especiales segun categoria |
+| `Booking` | Reservas con status, purpose, campos especiales segun categoria. `isExceptional Boolean @default(false)`: omite validaciones de horario y duracion maxima (solo roles ADMIN/SUPER_ADMIN) |
+| `Maintenance` | Periodo de cierre del espacio. Campos: title, description?, startTime, endTime, spaceId, createdBy. Bloquea la creacion de cualquier reserva (normal o excepcional) que se solape con el periodo |
 | `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria) |
 | `CertificationRequest` | Solicitudes de certificacion |
 | `Training` | Sesiones de capacitacion con `capacity` (cupos), exenciones de recursos e inscripciones |
@@ -293,7 +299,7 @@ AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIE
 |---|:---:|:---:|:---:|
 | Recursos (CRUD) | ✓ | ✓ | ✓ |
 | Categorias (CRUD) | ✓ | — | ✓ |
-| Certificaciones (admin) | ✓ | ✓ | — |
+| Certificaciones (admin) | ✓ | ✓ | ✓ |
 | Capacitaciones (crear/borrar/exportar) | ✓ | ✓ | — |
 | Inscribir/desinscribir otras usuarias en capacitaciones | ✓ | ✓ | ✓ |
 | Reservas (aprobar/rechazar/ver todas) | ✓ | — | ✓ |
@@ -335,8 +341,11 @@ PUT    /api/spaces/:id             <- editar espacio (superadmin)
 DELETE /api/spaces/:id             <- eliminar espacio (superadmin)
 
 GET    /api/users                  <- lista usuarios (todos los roles elevados: admin + lider_tecnica + lider_comunitaria)
+GET    /api/users/export           <- exportar Excel con usuarias del espacio (admin) — ESTATICA, declarada antes de /:id
+GET    /api/users/audit-logs       <- historial de auditoria (admin) — ESTATICA, declarada antes de /:id
+GET    /api/users/:id/summary      <- ficha de usuaria: stats + reservas + capacitaciones + certs (requireElevated)
 POST   /api/users                  <- crear usuario (admin)
-PATCH  /api/users/:id              <- editar usuario, acepta password y spaceId (admin)
+PATCH  /api/users/:id              <- editar usuario, acepta password, phone y spaceId (admin)
 PATCH  /api/users/:id/verify       <- verificar usuario (admin + lider_comunitaria)
 PATCH  /api/users/:id/role         <- cambiar rol (admin)
 DELETE /api/users/:id              <- eliminar usuario (admin)
@@ -360,15 +369,10 @@ PATCH  /api/bookings/:id/approve   <- aprobar (admin + lider_comunitaria)
 PATCH  /api/bookings/:id/reject    <- rechazar (admin + lider_comunitaria)
 PATCH  /api/bookings/:id/cancel    <- cancelar
 
-GET    /api/certifications/mine      <- certificaciones del usuario
-GET    /api/certifications/my-requests <- solicitudes propias
-POST   /api/certifications/request  <- solicitar certificacion
-GET    /api/admin/certifications/requests <- solicitudes pendientes (admin + lider_tecnica)
-PATCH  /api/admin/certifications/schedule <- programar sesion (admin + lider_tecnica)
-PATCH  /api/admin/certifications/requests/:id/resolve <- resolver (admin + lider_tecnica)
-PATCH  /api/admin/certifications/cancel-session <- cancelar sesion: revierte requestIds[] a PENDING (admin + lider_tecnica)
-GET    /api/admin/certifications    <- todas las certs (admin + lider_tecnica)
-DELETE /api/admin/certifications/:id <- revocar cert; la CertificationRequest vuelve a PENDING (no se elimina)
+GET    /api/certifications/mine      <- certificaciones del usuario autenticado
+GET    /api/admin/certifications    <- todas las certs del espacio; acepta ?userId= para filtrar por usuaria (requireElevated)
+POST   /api/admin/certifications    <- certificar usuaria directamente {userId, categoryId, notes?} (requireElevated)
+DELETE /api/admin/certifications/:id <- revocar cert (requireElevated)
 
 GET      /api/trainings                  <- sesiones de capacitacion con enrollments (cualquier auth)
 POST     /api/trainings/:id/enroll       <- inscribirse (cualquier auth; body {targetUserId?} para roles elevados; si cupo lleno → WAITLIST)
@@ -384,6 +388,11 @@ DELETE   /api/comments/:id
 
 GET/PUT  /api/settings/business-hours  <- horario de negocio (admin)
 
+GET      /api/maintenances         <- lista mantenciones del espacio (authenticate)
+POST     /api/admin/maintenances   <- crear mantención (requireAdmin)
+PATCH    /api/admin/maintenances/:id <- editar mantención (requireAdmin)
+DELETE   /api/admin/maintenances/:id <- eliminar mantención (requireAdmin)
+
 GET      /api/health               <- health check con DB
 ```
 
@@ -391,26 +400,28 @@ GET      /api/health               <- health check con DB
 
 ## Reglas de negocio criticas
 
-- **Certificacion por categoria**, no por maquina individual
+- **Certificacion por categoria**, no por maquina individual. Los roles elevados (ADMIN, SUPER_ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA) certifican/revocan directamente desde `/admin/certifications` via combobox de busqueda de usuaria. No hay flujo de solicitud ni sesiones programadas.
 - Usuario sin cert en la categoria → reserva PENDING (requiere aprobacion admin)
 - Roles elevados o recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Deteccion de conflictos:** `startA < endB AND endA > startB` → 409
 - **Horario de negocio**: reservas validadas contra `BusinessHours` del espacio tanto en frontend como en backend. Frontend usa strings HH:MM locales para evitar ambiguedad de zona horaria. Backend recibe `localDate`, `localStartTime`, `localEndTime` en el body de creacion de reserva y consulta `BusinessHours` via `findUnique({ spaceId_dayOfWeek })`. Comparacion HH:MM como string lexicografica es suficiente y sin timezone.
-- Duracion maxima de reserva configurable via `Space.maxBookingMinutes` (default 240 min = 4h, intervalos de 30). El backend valida contra este valor en createBooking y updateBooking; el frontend muestra el limite en tiempo real en el hint de duracion del BookingModal
+- Duracion maxima de reserva configurable via `Space.maxBookingMinutes` (default 240 min = 4h, intervalos de 30). El backend valida contra este valor en createBooking y updateBooking; el frontend muestra el limite en tiempo real en el paso SCHEDULE del BookingWizard
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
 - Maximo 10 usuarias por sesion de certificacion
 - Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
 - Roles elevados pueden inscribir/desinscribir otras usuarias en capacitaciones (`targetUserId` en el body de enroll/unenroll)
-- `ESPACIO_REUNION` (slug): auto-selecciona el recurso, oculta selector de maquina y pregunta de acompanante. Muestra campo de N° asistentes (→ `attendees`) y notas con label/placeholder contextual para identificar personas externas a la agrupacion
+- `ESPACIO_REUNION` (slug): ya no aparece como opcion de categoria en el BookingWizard — se usa como **proposito** `REUNION`. El wizard auto-selecciona el recurso con slug `ESPACIO_REUNION` del espacio, salta el paso de maquinas y muestra campos especiales (N° asistentes, privacidad). La opcion REUNION solo es visible para ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA.
 - **Aforo**: `Space.maxCapacity` limita asistentes totales en reservas de maquinas; `Space.maxCapacityReunion` limita asistentes por reserva de sala. Valores configurables desde SettingsPage. El check en booking.controller distingue slug `ESPACIO_REUNION` vs. el resto. No aplica a ADMIN/SUPER_ADMIN
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
 - No usar mapas estaticos de colores/labels en frontend — usar `r.category?.color` y `r.category?.name`
-- **Edicion de reservas:** `PATCH /api/bookings/:id` valida propiedad (userId == actor o rol elevado), status no CANCELLED/REJECTED, duracion <= 4h, no en el pasado, horario de negocio y conflictos (con `excludeBookingId`). Solo actualiza startTime/endTime/notes; status/resource/purpose no son editables.
-- **Revocacion de certificacion:** `DELETE /admin/certifications/:id` ya no borra la `CertificationRequest`. En su lugar hace `upsert` con status PENDING, scheduledDate null, resolvedAt null, notes null. Esto permite que el admin reprograme la sesion sin que el usuario deba hacer una nueva solicitud.
-- **Cancelar sesion de certificacion:** `PATCH /admin/certifications/cancel-session` recibe `{ requestIds: string[] }` y revierte todas las solicitudes SCHEDULED a PENDING. No usa ruta dinamica `/:id` — usa metodo PATCH en ruta estatica para no colisionar con `DELETE /:id`.
+- **Edicion de reservas:** el frontend abre el wizard completo pre-relleno via prop `editBookings?: Booking[]`. Al confirmar, el wizard cancela los bookings originales y crea los nuevos (estrategia cancelar+recrear). El backend `PATCH /api/bookings/:id` sigue disponible para cancelaciones individuales pero ya no se usa para edicion desde el calendario. El boton "Editar" llama `onEditBooking(bookings: Booking[])` en `CalendarView` → `handleEditBooking` en `CalendarPage`.
+- **Reservas excepcionales:** `isExceptional=true` en el body de `POST /api/bookings` omite: validacion de duracion maxima y validacion de horario de negocio. Las mantenciones siguen bloqueando. Solo roles elevados pueden crear reservas excepcionales; el flag es ignorado para USER.
+- **Mantenciones:** bloquean la creacion de cualquier reserva (normal o excepcional) cuyo rango se solape (`startA < endB AND endA > startB`). El backend devuelve 409 con nombre de la mantención. No hay limite de duracion para las mantenciones.
+- **Revocacion de certificacion:** `DELETE /admin/certifications/:id` elimina la `Certification` directamente. No hay `CertificationRequest` que actualizar (el modelo fue eliminado).
+- **Certificacion directa:** `POST /admin/certifications` crea una `Certification` con `upsert` (si ya existe la actualiza). Protegido con `requireElevated` para incluir LIDER_COMUNITARIA.
 - **Agrupacion de actividades en CalendarView (union-find):** `clusterVisibleEvents()` en `CalendarView.tsx` usa algoritmo union-find para detectar grupos de eventos que se solapan (`sA < eB && eA > sB`). Grupos de 1 → evento original; grupos de 2+ → evento cluster slate `#475569` con label "N actividades". Los `trainingBgEvents` (display:'background') se excluyen del clustering. El `handleDateClick` tambien usa la misma logica para detectar actividades al hacer click y abrir el `clusterModal` en lugar de ir directo al BookingModal.
 - **TrainingModal en modo edicion:** prop `initialTraining?: Training` — si se provee, pre-rellena todos los campos y llama `trainingService.update()` + `trainingService.updateExemptions()` al guardar. Las exenciones se muestran en ambos modos (crear y editar).
-- **`formatTimeInput` en dateHelpers:** `raw.replace(/[^0-9:]/g,'')` → si resultado es exactamente 4 digitos → inserta ':' en posicion 2. Nunca mas de 5 chars. Aplicado en BookingModal (startTime/endTime) y TrainingModal (startTime/endTime).
+- **`formatTimeInput` en dateHelpers:** `raw.replace(/[^0-9:]/g,'')` → si resultado es exactamente 4 digitos → inserta ':' en posicion 2. Nunca mas de 5 chars. Aplicado en BookingWizard (startTime/endTime) y TrainingModal (startTime/endTime).
 - **Logger en controllers:** importar `logger` desde `../lib/logger` (NO desde `../app`). Importar desde `app` genera dependencia circular (app → routes → controllers → app) que deja `logger` como `undefined` en runtime y crashea el servidor.
 - **pino-pretty en devDependencies:** esta en `devDependencies` de `server/package.json`. Al hacer `npm uninstall pino-pretty --save` se elimina de `node_modules` aunque sea devDep; si ocurre, reinstalar con `npm install --save-dev pino-pretty` desde `/server/`. En produccion (Render) el `.npmrc` con `production=false` garantiza que se instale igual.
 
@@ -464,12 +475,12 @@ GET      /api/health               <- health check con DB
 - Backend hashea la nueva contrasena con bcrypt
 
 ### Feature: Roles elevados agendan por otra usuaria
-- BookingModal Step 0 (solo roles elevados): "Para mi / Para otra usuaria"
-- Aplica a ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA (`isAdmin` en BookingModal)
-- Carga lista de usuarios del espacio al abrir el modal
+- BookingWizard paso WHO (solo roles elevados): "Para mi / Para otra usuaria"
+- Aplica a ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA
+- Carga lista de usuarios del espacio al abrir el wizard
 - `targetUserId?` en `CreateBookingDto`
 - Booking controller usa `targetUserId` si el actor es un rol elevado
-- Modal muestra nombre de la usuaria seleccionada en steps siguientes
+- El nombre de la usuaria seleccionada se muestra en pasos siguientes y en el resumen
 
 ### Feature: Exportacion a Excel de reservas
 - Boton "Exportar Excel" en BookingsPage (admin + lider_comunitaria)
@@ -505,10 +516,10 @@ GET      /api/health               <- health check con DB
 - booking.controller: reemplaza `> 12` hardcodeado — lee `space.maxCapacity` / `space.maxCapacityReunion`; maquinas verifican suma de asistentes en el horario, sala verifica solo la reserva puntual
 
 ### Feature: Sala de reuniones — asistentes y notas
-- BookingModal agrega campo **N° de asistentes** para `ESPACIO_REUNION` (estado `reunionAttendees`, default 2)
+- En BookingWizard, proposito REUNION activa el paso DETAILS con campo **N° de asistentes** (default 2) e **isPrivate**
 - Se envia como `attendees` en el body; el backend lo valida contra `space.maxCapacityReunion`
-- El campo Notas cambia label/placeholder en modo ESPACIO_REUNION: pide identificar personas externas a la agrupacion
-- Para el resto de categorias, label y placeholder de notas no cambian
+- El campo Notas pide identificar personas externas a la agrupacion cuando proposito es REUNION
+- Para el resto de propositos, label y placeholder de notas no cambian
 
 ### Feature: Auditoria
 - `AuditLog` model en BD
@@ -520,7 +531,7 @@ GET      /api/health               <- health check con DB
 - `slotDuration: "00:30:00"` — franjas de 30 min
 - Click en celda con reservas → `slotModal` muestra lista con opcion de ver detalle o agregar nueva reserva
 - Detalle de reserva → boton "← Volver" restaura el slotModal (`returnSlot` en estado de detalle)
-- Click en celda vacía → abre BookingModal (o actionChoice si rol elevado)
+- Click en celda vacía → abre BookingWizard (o actionChoice si rol elevado)
 - `hoursLoaded` state en CalendarPage: CalendarView no monta hasta que businessHours se cargue
 - `isAdmin = ['ADMIN','SUPER_ADMIN','LIDER_TECNICA','LIDER_COMUNITARIA'].includes(role)` en CalendarPage
 - Tiempo flexible de reserva: inputs `startTime`/`endTime` tipo `time`, maximo 4 horas
@@ -558,9 +569,9 @@ GET      /api/health               <- health check con DB
 - `GET /api/trainings` incluye `enrollments` con datos de usuario en cada capacitacion
 - **TrainingModal** (`TrainingModal.tsx`): input de cupos en formulario de creacion; estado `capacity` tipo string
 - **CalendarPage**: click en training abre modal de detalle para todos los roles (no solo admin). Para usuarios: botones Inscribirse / Lista de espera / Cancelar inscripcion. Para admins: lista de inscritas + boton Eliminar (con ConfirmModal)
-- **`/my-trainings`** (`MyTrainingsPage.tsx`): filtro "Mis inscripciones" vs "Todas las proximas". Badge de estado por capacitacion. Boton contextual segun estado de inscripcion
+- **`/my-bookings`** tab "Capacitaciones" (`MyBookingsPage.tsx`): filtro "Mis inscripciones" vs "Todas las proximas". Badge de estado por capacitacion. Boton contextual segun estado de inscripcion. La ruta `/my-trainings` redirige a `/my-bookings`
 - **`/admin/trainings`** (`TrainingsPage.tsx`): filtro Proximas/Pasadas/Todas. Tarjeta por sesion con cupos, lista de espera, lista de inscritas expandible (nombre, email, estado, fecha). Crear y eliminar capacitaciones
-- Navbar actualizado: usuarios → `/my-trainings`; roles con `canManageTrainings` → `/admin/trainings` (desktop y movil)
+- Navbar: usuarios acceden a capacitaciones desde "Mis Reservas" (`/my-bookings`, tab Capacitaciones). El link separado "Capacitaciones" fue eliminado del menu. Roles con `canManageTrainings` → `/admin/trainings`
 
 ### Feature: Inscripcion de otras usuarias en capacitaciones (roles elevados)
 - Endpoints `POST /api/trainings/:id/enroll` y `DELETE /api/trainings/:id/enroll` aceptan `{ targetUserId }` en el body
@@ -578,14 +589,14 @@ GET      /api/health               <- health check con DB
 - Ruta estatica `/admin/trainings/export` declarada ANTES de la dinamica `/:id` para evitar que Express la interprete como ID
 
 ### Feature: Inputs de hora en formato 24h y sin bloqueo al borrar
-- Inputs `type="time"` en `BookingModal` reemplazados por `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`
+- Inputs `type="text"` con `placeholder="HH:MM"` y `maxLength={5}` en `BookingWizard` y `ExceptionalBookingModal`
 - Permite borrar completamente el campo sin quedar atascado en un segmento (comportamiento nativo del browser con `type="time"`)
 - Helper `isValidTime(t: string): boolean` con regex `/^\d{2}:\d{2}$/` usado para: guardado de disponibilidad, validacion inline de duracion y validacion al enviar
 - Inputs numericos `reunionAttendees`, `produceQty`, `companionCount` cambiados de `number` a `string` como estado React; `parseInt()` con fallback a 1 solo al enviar el formulario
 - Regla general: usar `useState<string>` para inputs numericos que el usuario debe poder borrar completamente; parsear solo al guardar/enviar
 
 ### Feature: Validacion de horario de negocio en reservas
-- **Frontend (`BookingModal.tsx`)**: recibe prop `businessHours?: BusinessHours[]` desde `CalendarPage` (ya los cargaba para FullCalendar)
+- **Frontend (`BookingWizard.tsx`)**: recibe prop `businessHours?: BusinessHours[]` desde `CalendarPage` (ya los cargaba para FullCalendar)
 - `dayHours`: lookup del dia seleccionado con `businessHours.find(h => h.dayOfWeek === new Date(date + 'T12:00:00').getDay())`. El `T12:00:00` evita que parsear solo la fecha como UTC-midnight cause desfase de dia en zonas UTC-X
 - Feedback visual en tiempo real: hint de horario bajo el campo fecha ("Horario del espacio: 09:00 – 17:00" o "El espacio no abre ese dia"), borde rojo + texto de error en el input de hora si startTime < openTime o endTime > closeTime
 - Validacion al enviar: bloquea si dia cerrado, si startTime < openTime, o si endTime > closeTime
@@ -610,19 +621,14 @@ GET      /api/health               <- health check con DB
 - Aplicado en los `onChange` de startTime/endTime en `BookingModal` y `TrainingModal`
 
 ### Feature: Reversion de certificacion a PENDING al revocar
-- `DELETE /admin/certifications/:id` ya no elimina la `CertificationRequest`; hace `upsert` con `{ status: PENDING, scheduledDate: null, resolvedAt: null, notes: null }`
-- El usuario aparece en la tab "Solicitudes" del panel de certificaciones y puede ser reprogramado sin hacer una nueva solicitud
-
-### Feature: Cancelar sesion de certificacion desde el calendario
-- `PATCH /admin/certifications/cancel-session` recibe `{ requestIds: string[] }` — revierte todas las solicitudes a PENDING
-- Boton "Cancelar sesion" en el popup de sesion de certificacion en `CalendarView` (solo `isAdmin && onCancelCertSession`)
+- `DELETE /admin/certifications/:id` elimina directamente la `Certification`. No hay CertificationRequest que actualizar (modelo eliminado).
 
 ### Feature: Agrupacion de actividades solapadas en el calendario (clustering)
 - `clusterVisibleEvents(events: VisibleFCEvent[])` en `CalendarView.tsx` — algoritmo union-find (DSU) para detectar grupos de eventos solapados
 - Grupos de 1 → evento original sin cambios; grupos de 2+ → un unico evento cluster slate `#475569` con texto "N actividades" y lista de nombres
-- Solo se agrupan eventos visibles (bookings, training labels, cert sessions). Los `trainingBgEvents` (display:'background') nunca entran al clustering
+- Solo se agrupan eventos visibles (bookings, training labels). Los `trainingBgEvents` (display:'background') nunca entran al clustering
 - Click en cluster → `clusterModal`: lista de actividades con punto de color, nombre, tipo y horario; click en item → detail modal individual
-- `handleDateClick` tambien detecta actividades en la celda clicada y abre `clusterModal` si las hay, en lugar de ir directo al BookingModal
+- `handleDateClick` detecta actividades en la celda clicada y abre `clusterModal` si las hay, en lugar de ir directo al BookingWizard. `eventClick` siempre abre el clusterModal para cualquier evento (incluso individual), mostrando la lista de actividades mas el boton "Nueva actividad en este horario"
 - `slotModal` fue eliminado completamente y reemplazado por `clusterModal`
 
 ### Feature: Soft delete de usuarios
@@ -648,8 +654,8 @@ GET      /api/health               <- health check con DB
 - `SpaceSettings` en `types/index.ts` incluye `maxBookingMinutes: number`
 - `settingsService.updateBusinessHours` acepta cuarto parametro `maxBookingMinutes`
 - `SettingsPage`: nuevo bloque "Duracion maxima de agendamiento" con `<select>` entre el bloque de Aforo y el de Horarios
-- `CalendarPage`: carga `maxBookingMinutes` desde settings y lo pasa a `BookingModal` como prop
-- `BookingModal`: prop `maxBookingMinutes?: number` (default 240). Validacion al submit y hint inline en tiempo real usan el valor dinamico
+- `CalendarPage`: carga `maxBookingMinutes` desde settings y lo pasa a `BookingWizard` como prop
+- `BookingWizard`: prop `maxBookingMinutes?: number` (default 240). Validacion al avanzar de SCHEDULE y hint de duracion en tiempo real usan el valor dinamico
 
 ### Feature: Inscripcion desde el calendario para roles elevados
 - Modal de detalle de capacitacion en `CalendarPage` ahora incluye `UserCombobox` + boton "Inscribir" para roles elevados (igual patron que `TrainingsPage`)
@@ -672,6 +678,103 @@ GET      /api/health               <- health check con DB
 - Tamano recomendado para logos: PNG cuadrado 180×180px, fondo transparente, maximo ~50KB
 - `GET /api/settings/customization` — publica para cualquier usuario autenticado; devuelve `{ logoUrl, primaryColor }`
 - `PUT /api/settings/customization/colors` — requiere `requireAdmin`; actualiza `primaryColor` y retorna `logoUrl` calculado
+
+### Feature: Telefono de usuaria
+- Campo `phone String?` agregado al modelo `User` (migracion `20260330120000_add_user_phone`)
+- `getMe` y `updateMe` en `auth.controller.ts` incluyen `phone` en select y en update
+- `getUsers` y `getUserSummary` en `user.controller.ts` usan `USER_SELECT` constante que incluye `phone`
+- `createUser` y `updateUser` extraen `phone` del body y lo pasan a Prisma
+- Frontend: `ProfilePage.tsx` tiene campo de telefono; `UsersPage.tsx` (crear/editar usuario) tambien
+
+### Feature: Exportacion de usuarios a Excel
+- Ruta: `GET /api/users/export` (requireAdmin) — declarada ANTES de `/:id`
+- Genera `usuarias.xlsx` con columnas: Nombre, Email, Telefono, Agrupacion, Rol, Estado, Registrada
+- `userService.exportAll()` en el frontend con `responseType: 'blob'`; boton en `UsersPage.tsx`
+
+### Feature: Ficha de usuaria (UserDetailPage)
+- Ruta: `GET /api/users/:id/summary` (requireElevated) — retorna `{ user, bookings, bookingStats, enrollments, certifications }`
+- Interfaces en `types/index.ts`: `BookingStats`, `UserSummaryEnrollment`, `UserSummary`
+- `UserDetailPage.tsx` en `/admin/users/:id` — accesible desde el boton "Ver" en `UsersPage.tsx`
+- Header con boton "← Volver" a `/admin/users`
+- Tarjeta de info: nombre, rol, estado verificacion, email, telefono, agrupacion, createdAt
+- 4 stat cards: total reservas, pendientes, confirmadas, certificaciones
+- Tabs: Reservas | Capacitaciones | Certificaciones
+- Tab Reservas: filtro por status, tabla con botones aprobar/rechazar para PENDING (solo ADMIN/SUPER_ADMIN)
+- Tab Capacitaciones: secciones Proximas y Pasadas con badge de estado de inscripcion
+- Tab Certificaciones: punto de color, categoria, fecha, nombre certificadora, boton Revocar con ConfirmModal
+- Registrada en `App.tsx` como `<Route path="/admin/users/:id">`
+
+### Feature: Hora Excepcional
+- Campo `isExceptional Boolean @default(false)` en modelo `Booking` (migracion `20260330130000_add_exceptional_booking_and_maintenance`)
+- En `createBooking`: `isExceptional` solo se acepta si el actor es rol elevado (ADMIN/SUPER_ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA). Si `isExceptional=true`: se omite la validacion de duracion maxima y la validacion de horario de negocio. Las mantenciones si bloquean incluso reservas excepcionales.
+- En `updateBooking`: si `booking.isExceptional === true` se omiten las mismas validaciones
+- `ExceptionalBookingModal.tsx` en `client/src/components/booking/`: UI naranja, sin restricciones de horario en frontend, envia `isExceptional: true` en el DTO
+- CalendarPage: boton "Hora Excepcional" (naranja) en toolbar y opcion en actionChoice dialog — solo para `canManageMaintenance` (ADMIN/SUPER_ADMIN)
+
+### Feature: Mantenciones / Cierre de espacio
+- Modelo `Maintenance` en schema (migracion `20260330130000_add_exceptional_booking_and_maintenance`): `id, title, description?, startTime, endTime, spaceId, createdBy, createdAt`; FK a Space y User
+- `maintenance.controller.ts`: `getMaintenances` (filtra por spaceId via `resolveSpaceId`), `createMaintenance`, `updateMaintenance`, `deleteMaintenance`
+- `maintenance.routes.ts`: `GET /maintenances` (authenticate), `POST/PATCH/DELETE /admin/maintenances[/:id]` (requireAdmin). Registrado en `app.ts`
+- En `createBooking`: despues de validar conflictos, consulta `prisma.maintenance.findFirst` buscando solapamiento. Si existe → 409 con nombre de la mantención. Aplica a TODAS las reservas incluyendo excepcionales.
+- `maintenanceService.ts` en el cliente: `getAll`, `create`, `update`, `remove`
+- `MaintenanceModal.tsx`: UI roja, campos fecha+hora inicio y fin separados (soporta multi-dia), banner de advertencia, modos crear y editar via `initialMaintenance` prop
+- `CalendarView.tsx`: eventos de fondo (`display:'background'`, color `#fecaca`) + eventos etiqueta clicables (`#dc2626`, texto "🔧 {titulo}"). `handleDateClick` detecta mantención activa y llama `onMaintenanceClick`. Eventos de fondo excluidos del clustering.
+- CalendarPage: boton "Mantención" (rojo) en toolbar y opcion en actionChoice — solo `canManageMaintenance`. Modal de detalle muestra titulo, descripcion, fechas, botones editar/eliminar (admin). ConfirmModal para eliminacion. Leyenda roja en la barra de colores.
+- `checkAvailability` en `booking.controller`: consulta mantenciones y bloquea si hay solapamiento
+
+### Feature: BookingWizard — agendamiento centrado en persona con multi-maquina
+- **Archivo:** `client/src/components/booking/BookingWizard.tsx` (reemplaza `BookingModal.tsx` en CalendarPage)
+- **Filosofia:** la reserva es por persona, no por maquina. Una persona puede seleccionar N maquinas en la misma sesion. Se crea una reserva (`Booking`) por cada maquina seleccionada con los mismos datos de fecha/hora/proposito/detalles.
+- **Pasos del wizard:**
+  - `WHO` (solo roles elevados): "Para mi" o "Para otra usuaria" — selector de usuaria del espacio
+  - `SCHEDULE`: Fecha, hora inicio/fin (inputs `type="text"` HH:MM), proposito (Aprender/Producir/Diseñar/Reunion). Feedback en tiempo real de duracion y horario del espacio. Avanza a MACHINES o salta a DETAILS si proposito es REUNION.
+  - `MACHINES`: Lista de recursos activos agrupados por categoria (excluye ESPACIO_REUNION). Multi-select con checkbox. Muestra disponibilidad en tiempo real via `bookingService.getAvailability`. Para mesones (capacidad > 1) muestra selector de cantidad `−/+`. Badge "Sin certificacion" si la usuaria no esta certificada para esa categoria.
+  - `DETAILS`: Varia segun proposito. PRODUCE: que producir + cantidad. REUNION: N° asistentes + privacidad. Todos: acompañantes (con aviso "Recomendamos ir sola…"), notas.
+  - `SUMMARY`: Resumen completo en tarjeta gris. Tres botones: **Cancelar** (confirma antes de cerrar), **Editar** (vuelve a SCHEDULE), **Confirmar** (crea todas las reservas).
+- **Confirmacion de cancelar:** al hacer click en X o "Cancelar" en cualquier paso, aparece dialogo `"¿Cancelar la reserva? Se perderán todos los datos ingresados."` con opciones "Seguir editando" y "Sí, cancelar".
+- **ESPACIO_REUNION como proposito:** la opcion "Reunion" en SCHEDULE es visible solo para LIDER_COMUNITARIA, ADMIN y SUPER_ADMIN. Al seleccionarla, el wizard auto-identifica el recurso con `category.slug === 'ESPACIO_REUNION'` del espacio y salta el paso MACHINES.
+- **Multi-reserva:** en `handleConfirm`, se itera sobre `selectedResourceIds` y se llama `bookingStore.create()` por cada uno. Si una falla (ej. conflicto en servidor), el error se muestra en toast y las anteriores ya creadas se mantienen.
+- **CalendarPage:** importa `BookingWizard` en lugar de `BookingModal`. Props identicas: `isOpen`, `onClose`, `preselectedDate`, `businessHours`, `maxBookingMinutes`.
+- **Indicador de pasos:** componente `StepIndicator` con barras horizontales y contador `N/Total`. El total varia segun rol elevado y si el proposito es REUNION (menos pasos).
+- **eventClick en CalendarView:** modificado para SIEMPRE abrir el clusterModal (recolecta todas las actividades solapadas con el evento clickeado). Antes iba directo al detalle en eventos individuales — ahora la primera interaccion siempre muestra la lista con boton "Nueva actividad en este horario".
+
+### Feature: Acordeon en seleccion de maquinas (BookingWizard)
+- El paso `MACHINES` agrupa los recursos por categoria. Cada categoria es un `<button>` con chevron, punto de color, nombre y badge de cantidad seleccionada
+- Las categorias comienzan **cerradas**. Un click expande/colapsa la lista de recursos de esa categoria
+- Estado: `expandedCategories: Set<string>` en `useState`; toggle con `setExpandedCategories(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; })`
+- Las categorias con al menos un recurso seleccionado muestran el count en un badge redondeado azul
+
+### Feature: Agrupacion de reservas por sesion (usuario → maquinas)
+- Una "sesion" es el conjunto de reservas del mismo usuario en el mismo `startTime + endTime + purpose`
+- Clave de agrupacion: `${booking.userId}_${booking.startTime}_${booking.endTime}_${booking.purpose}`
+- **CalendarView:** `bookingGroups` useMemo agrupa en un `Map`; `rawVisibleEvents` genera un evento por grupo. Reservas multi-maquina reciben `backgroundColor:'transparent'`, `borderColor:'#4f46e5'`
+- **eventContent** booking branch: si `bGroup.length > 1`, renderiza un `<div>` con `position:absolute; inset:0; background:linear-gradient(135deg,#2563eb 0%,#7c3aed 50%,#dc2626 100%)` cubriendo toda el area del evento. Si `bGroup.length === 1`, renderiza el evento con el color de categoria como siempre
+- **ClusterItem:** campo renombrado de `booking: Booking` a `bookings: Booking[]`. `VisibleFCEvent.extendedProps.bookings` es el array de reservas del grupo; `DetailModal.bookings` idem
+- **BookingsPage (admin):** `groupBookings()` agrupa igual que CalendarView. La tabla muestra Usuario como columna principal y una lista de maquinas (con punto de color por categoria) en la columna Maquinas. Las acciones (aprobar/rechazar/cancelar) operan sobre todas las reservas del grupo
+- **MyBookingsPage:** `groupMyBookings()` agrupa de la misma forma. `BookingGroupCard` reemplaza `BookingCard`: encabezado con fecha/hora, lista de maquinas con puntos de color, proposito, notas y boton cancelar que recorre todas las reservas del grupo
+
+### Feature: Edicion de reservas via wizard completo
+- Al hacer click en "Editar" en el modal de detalle de una reserva en el calendario, se llama `onEditBooking(bookings: Booking[])` (prop de `CalendarView`)
+- `CalendarPage` tiene estado `editBookings: Booking[] | null`. `handleEditBooking` setea ese estado y abre el wizard. `handleBookingModalClose` lo limpia
+- `BookingWizard` recibe prop `editBookings?: Booking[]`. `isEditMode = !!editBookings?.length`
+- `makeInitialFromBookings(editBookings)`: factory que extrae del primer booking la fecha (con `new Date(first.startTime)`), horas (HH:MM formateado), proposito, y de todos los bookings los resourceIds y quantities
+- Reset `useEffect`: cuando `isEditMode`, llama `makeInitialFromBookings` e inicializa en paso `SCHEDULE` (salta WHO)
+- `handleConfirm` en modo edicion: 1) cancela todos los bookings originales (`bookingStore.cancel(b.id)` en paralelo), 2) crea las nuevas reservas con los datos del wizard. El `userId` del booking original se preserva como `targetUserId`
+- SUMMARY en modo edicion: titulo "Revisa los cambios", boton de confirmacion "Guardar cambios"
+- `onEditBooking` reemplaza a `onUpdateBooking` — la prop anterior fue eliminada de `CalendarView` y `CalendarPage`
+
+### Feature: Color naranja reservado para Capacitaciones
+- El rango naranja/ambar (matiz HSL 20–55°) esta bloqueado en el picker de colores de categorias
+- `isOrangeHue(hex: string): boolean` en `CategoriesPage.tsx`: convierte hex → RGB → HSL; devuelve true si el matiz cae en [20, 55]
+- `PRESET_COLORS` no incluye ningún tono naranja/ambar. Los colores reemplazados son: `#a855f7`, `#14b8a6`, `#e11d48`
+- Validacion en `handleSave`: si `isOrangeHue(form.color)` → `toast.error(...)` y return temprano
+- Warning en tiempo real bajo el color picker: `{isOrangeHue(form.color) && <p className="text-xs text-amber-600 mt-1">⚠️ El naranja/ámbar está reservado para Capacitaciones</p>}`
+- En CalendarView, los eventos de capacitaciones usan el color naranja/ambar (`#f97316` o similar) para diferenciarse visualmente de las categorias de maquinas
+
+### Feature: Gradiente para reservas multi-maquina
+- Cuando una sesion tiene 2+ maquinas, el evento del calendario muestra un gradiente diagonal azul→violeta→rojo
+- Implementacion: el evento FullCalendar tiene `backgroundColor:'transparent'`; en `eventContent`, si `bGroup.length > 1`, se devuelve un `<div>` con `style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,#2563eb 0%,#7c3aed 50%,#dc2626 100%)', borderRadius:'inherit', overflow:'hidden' }}` y dentro el contenido de texto (nombre, "N maquinas · lista", proposito)
+- En el `clusterModal`, los items de reserva multi-maquina muestran un punto con el mismo gradiente (via `background` CSS inline) en vez de un color solido
 
 ---
 
@@ -715,3 +818,13 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **Eliminacion de recursos:** `DELETE /api/resources/:id` — bloquea con 409 si hay reservas. Elimina `TrainingExemption` del recurso antes de borrar. El frontend muestra el error del backend en el toast.
 - **maxBookingMinutes en booking.controller:** en createBooking, la consulta a `space` para obtener `maxBookingMinutes` ocurre DESPUES de fetchear el resource (necesita `resource.spaceId`). En updateBooking, la consulta a resource incluye `spaceId` y se hace una segunda query para obtener `maxBookingMinutes` del space. No se puede mover la validacion antes del fetch del resource porque se necesita el spaceId.
 - **trust proxy en Render:** `app.set('trust proxy', 1)` debe declararse en `app.ts` ANTES de registrar los middlewares de rate-limit, para que `req.ip` sea la IP real del cliente (X-Forwarded-For) y no la IP del proxy de Render.
+- **isExceptional en booking.controller:** la flag solo se acepta si el actor es rol elevado (`['ADMIN','SUPER_ADMIN','LIDER_TECNICA','LIDER_COMUNITARIA'].includes(req.user.role)`). Un USER enviando `isExceptional: true` en el body es ignorado silenciosamente.
+- **Mantenciones bloquean todo:** el check de mantenciones en `createBooking` ocurre DESPUES del check de conflictos de reservas y aplica incluso si `isExceptional=true`. Es la ultima capa de validacion antes de crear.
+- **USER_SELECT en user.controller:** usar la constante `USER_SELECT` para todos los selects de usuarios en lugar de repetir los campos — garantiza consistencia entre `getUsers`, `createUser`, `updateUser` y `getUserSummary`.
+- **Rutas estaticas de usuarios:** `GET /users/export` y `GET /users/audit-logs` deben declararse ANTES de `GET /users/:id` en `user.routes.ts` para que Express no los interprete como IDs de usuario.
+- **UserDetailPage tabs:** usa `useState` para el tab activo y carga todos los datos desde el endpoint `/users/:id/summary` al montar. `ConfirmModal` se reutiliza para aprobar/rechazar/revocar.
+- **canManageMaintenance:** `user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'` — solo estos dos roles pueden crear, editar y eliminar mantenciones. LIDER_TECNICA y LIDER_COMUNITARIA solo ven las mantenciones en el calendario.
+- **onEditBooking en CalendarView:** reemplaza al anterior `onUpdateBooking`. Firma: `onEditBooking?: (bookings: Booking[]) => void`. Recibe el array de bookings del grupo (sesion) para que CalendarPage lo pase a BookingWizard via prop `editBookings`. No confundir con `onUpdateBooking` (eliminado).
+- **Agrupacion de reservas (ClusterItem):** el campo del item de cluster cambio de `booking: Booking` (singular) a `bookings: Booking[]` (array). Todos los lugares donde se accedia a `item.booking` deben usar `item.bookings[0]` para el primer booking o iterar el array. Igualmente `VisibleFCEvent.extendedProps.bookings` es siempre un array.
+- **Gradiente multi-maquina:** FullCalendar no soporta CSS gradients en `backgroundColor` — la solucion es poner `backgroundColor:'transparent'` en el evento y devolver un `<div>` con `position:absolute; inset:0` y el gradiente como `background` en `eventContent`. Necesita `borderRadius:'inherit'` para respetar el radio del evento FullCalendar.
+- **makeInitialFromBookings:** factory en BookingWizard que construye el estado inicial del wizard desde un array de Booking existentes. Extrae fecha y horas del primer booking (convirtiendo ISO a HH:MM local via `new Date(first.startTime).getHours()`), proposito, resourceIds (uno por booking), quantities y campos de detalle del primer booking. El paso inicial en modo edicion es siempre `SCHEDULE` (se salta WHO).

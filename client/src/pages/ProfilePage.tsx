@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [organization, setOrganization] = useState(user?.organization ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
   const [profileLoading, setProfileLoading] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -21,6 +22,7 @@ export default function ProfilePage() {
       setName(user.name);
       setEmail(user.email);
       setOrganization(user.organization ?? '');
+      setPhone(user.phone ?? '');
     }
   }, [user]);
 
@@ -28,7 +30,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setProfileLoading(true);
     try {
-      await updateProfile({ name, email, organization });
+      await updateProfile({ name, email, organization, phone });
       toast.success('Perfil actualizado correctamente');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -121,6 +123,16 @@ export default function ProfilePage() {
               value={organization}
               onChange={(e) => setOrganization(e.target.value)}
               placeholder="Ej: Taller Comunal Las Flores"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono de contacto</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+56 9 1234 5678"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
