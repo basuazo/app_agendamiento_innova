@@ -10,7 +10,7 @@ import { resourceService } from '../../services/resource.service';
 import toast from 'react-hot-toast';
 
 export default function ResourcesPage() {
-  const { resources, fetchAll, toggle, isLoading } = useResourceStore();
+  const { resources, fetchAll, isLoading } = useResourceStore();
   const { currentSpaceId } = useAuthStore();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Resource | undefined>();
@@ -31,24 +31,14 @@ export default function ResourcesPage() {
     return [...list].sort((a, b) => {
       const val = (x: Resource) =>
         sort.key === 'name' ? x.name :
-        sort.key === 'category' ? (x.category?.name ?? '') :
-        sort.key === 'isActive' ? String(x.isActive) : '';
+        sort.key === 'category' ? (x.category?.name ?? '') : '';
       return compareVals(val(a), val(b), sort.dir);
     });
   }, [resources, search, sort]);
 
   useEffect(() => {
-    fetchAll(true); // incluir inactivos
+    fetchAll(false);
   }, [fetchAll, currentSpaceId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleToggle = async (id: string, isActive: boolean) => {
-    try {
-      await toggle(id);
-      toast.success(isActive ? 'Recurso desactivado' : 'Recurso activado');
-    } catch {
-      toast.error('Error al cambiar estado del recurso');
-    }
-  };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -56,7 +46,7 @@ export default function ResourcesPage() {
       await resourceService.remove(confirmDelete.id);
       toast.success('Recurso eliminado');
       setConfirmDelete(null);
-      fetchAll(true);
+      fetchAll(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       toast.error(msg ?? 'Error al eliminar recurso');
@@ -98,13 +88,12 @@ export default function ResourcesPage() {
               <tr>
                 <SortableHeader label="Recurso" sortKey="name" sort={sort} onSort={handleSort} className="text-left" />
                 <th className="px-4 py-3 text-left font-medium text-gray-600 hidden md:table-cell">Descripción</th>
-                <SortableHeader label="Estado" sortKey="isActive" sort={sort} onSort={handleSort} className="text-center" />
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {displayResources.map((r) => (
-                <tr key={r.id} className={r.isActive ? '' : 'opacity-60'}>
+                <tr key={r.id}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div
@@ -120,13 +109,6 @@ export default function ResourcesPage() {
                   <td className="px-4 py-3 text-gray-500 hidden md:table-cell max-w-xs truncate">
                     {r.description ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      r.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {r.isActive ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-3">
                       <button
@@ -134,14 +116,6 @@ export default function ResourcesPage() {
                         className="text-brand-600 hover:text-brand-800 text-xs font-medium"
                       >
                         Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggle(r.id, r.isActive)}
-                        className={`text-xs font-medium ${
-                          r.isActive ? 'text-amber-500 hover:text-amber-700' : 'text-green-600 hover:text-green-800'
-                        }`}
-                      >
-                        {r.isActive ? 'Desactivar' : 'Activar'}
                       </button>
                       <button
                         onClick={() => setConfirmDelete(r)}
@@ -162,7 +136,7 @@ export default function ResourcesPage() {
       {showForm && (
         <ResourceForm
           resource={editing}
-          onClose={() => { setShowForm(false); setEditing(undefined); fetchAll(true); }}
+          onClose={() => { setShowForm(false); setEditing(undefined); fetchAll(false); }}
         />
       )}
 

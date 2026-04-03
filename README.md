@@ -104,9 +104,9 @@ npm run dev
 |-----|-------------|
 | `SUPER_ADMIN` | Gestiona todos los espacios. Selecciona el espacio activo en el Navbar. Sin spaceId propio. |
 | `ADMIN` | Administra su espacio: usuarios, recursos, categorías, reservas, certificaciones, horarios. |
-| `LIDER_TECNICA` | Gestiona certificaciones, capacitaciones y recursos. Sin acceso a usuarios, reservas ni categorías. |
+| `LIDER_TECNICA` | Gestiona capacitaciones, certificaciones y recursos. Sin acceso a usuarios, reservas ni categorías. |
 | `LIDER_COMUNITARIA` | Aprueba reservas, gestiona categorías y recursos, verifica nuevos usuarios. |
-| `USER` | Reserva máquinas, solicita certificaciones, accede a la comunidad. |
+| `USER` | Reserva máquinas, accede a la comunidad, consulta sus certificaciones. |
 
 **Matriz de permisos resumida:**
 
@@ -114,7 +114,7 @@ npm run dev
 |--------|:-----:|:-------------:|:-----------------:|
 | Gestionar recursos | ✓ | ✓ | ✓ |
 | Gestionar categorías | ✓ | — | ✓ |
-| Certificaciones (admin) | ✓ | ✓ | — |
+| Certificar / revocar usuarias | ✓ | ✓ | ✓ |
 | Capacitaciones (crear/eliminar) | ✓ | ✓ | — |
 | Exportar capacitaciones a Excel | ✓ | ✓ | — |
 | Inscribir/desinscribir otras usuarias | ✓ | ✓ | ✓ |
@@ -152,7 +152,7 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Calendario interactivo**: vista semanal con FullCalendar. Las actividades que se solapan en el tiempo se agrupan automáticamente en un evento único "N actividades" (cluster). Hacer click en cualquier evento — sea uno solo o un cluster — siempre abre el modal de actividades del horario, mostrando la lista de actividades y el botón "Nueva actividad en este horario". Las reservas multi-máquina se muestran como un único evento con gradiente azul→violeta→rojo.
 - **Reservas centradas en persona (wizard multi-paso)**: el flujo de reserva es por persona, no por máquina. Un wizard guía en 4–5 pasos: 1) ¿para quién? (roles elevados), 2) fecha/hora/propósito, 3) selección de máquinas (multi-select con categorías en acordeón), 4) detalles, 5) resumen. Se pueden reservar varias máquinas a la vez en el mismo horario. Si se cancela el proceso, aparece un diálogo de confirmación antes de perder los datos. La edición de una reserva abre el wizard completo pre-relleno con todos los datos, cancela las reservas originales y crea las nuevas al confirmar.
 - **Validación de horario de negocio**: el wizard muestra el horario del espacio en tiempo real y bloquea horas fuera del rango configurado, tanto en frontend (feedback inmediato) como en backend (validación de seguridad).
-- **Sistema de certificaciones**: los usuarios solicitan certificación por categoría; el admin/Líder Técnica programa sesiones grupales (máx. 10) y aprueba/rechaza individualmente. Al revocar una certificación, la solicitud asociada vuelve a estado PENDIENTE (no se elimina), permitiendo reprogramar sin que el usuario deba solicitarla de nuevo. Desde el popup de sesión de certificación en el calendario, el admin puede cancelar toda la sesión con un clic, revirtiendo todas las solicitudes PROGRAMADAS a PENDIENTE.
+- **Sistema de certificaciones**: ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA certifican y revocan directamente desde `/admin/certifications`. La página tiene un combobox de búsqueda de usuarias y muestra una tabla con el estado de certificación por categoría. Certificar abre una fila expandible para ingresar notas opcionales. No hay flujo de solicitudes ni sesiones programadas — la certifcación es un acto directo del rol elevado.
 - **Capacitaciones**: el admin/Líder Técnica crea y edita sesiones de capacitación con cupos y horarios configurables (HH:MM). Las usuarias se inscriben desde la pestaña "Capacitaciones" en `/my-bookings` o desde el popup de la capacitación en el calendario. Cupos llenos → lista de espera con promoción automática. Desde el popup del calendario el admin puede editar, eliminar o agendar en el mismo horario (si hay recursos libres por exenciones). La página `/admin/trainings` muestra el listado completo con las inscritas.
 - **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings` y también desde el popup de capacitación en el calendario, usando un combobox de búsqueda por nombre o email. La lista de inscritas es visible para todas las usuarias (solo lectura para USER).
 - **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones.
@@ -254,11 +254,9 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - **Agendamiento multi-máquina**: una persona puede seleccionar varias máquinas en el mismo horario. El wizard crea una reserva (`Booking`) por cada máquina seleccionada, con los mismos datos de fecha/hora/propósito/detalles. Si una creación falla (ej. conflicto), las anteriores ya creadas se mantienen y el error se muestra en pantalla.
 - Duración máxima de reserva **configurable por espacio** desde la página de Configuración (30 min a 4 h en intervalos de 30 min; default 4 h). Horario configurable por espacio (default lun–sáb 09:00–17:00)
 - **Horario de negocio**: las reservas no pueden crearse fuera del horario configurado del espacio. El formulario muestra el horario en tiempo real y el backend lo valida independientemente.
-- **Certificación por categoría**, no por máquina individual. Sin cert → reserva PENDING
-- Admin y recursos con `requiresCertification=false` → reserva CONFIRMED directa
+- **Certificación por categoría**, no por máquina individual. Sin cert → reserva PENDING. Roles elevados o recursos con `requiresCertification=false` → reserva CONFIRMED directa
 - **Conflicto**: `startA < endB AND endA > startB` → error 409
 - Google Calendar sincroniza solo reservas CONFIRMED
-- Máximo **10 usuarias** por sesión de certificación
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
 - **Soft delete de usuarios**: `deletedAt` marca la eliminación sin borrar el historial. Un usuario eliminado no aparece en listas ni puede iniciar sesión. Si se crea un usuario con el mismo email, la cuenta se reactiva con los nuevos datos
 - **Eliminación de recursos**: solo si no tienen reservas asociadas. Si las tienen, el sistema indica desactivar en su lugar
@@ -267,8 +265,7 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - **Hora excepcional**: las reservas marcadas como `isExceptional` (solo roles ADMIN/SUPER_ADMIN) omiten la validación de horario de negocio y de duración máxima. Las mantenciones sí las bloquean igualmente
 - **Mantenciones**: un período de mantenimiento bloquea la creación de **cualquier** reserva (normal o excepcional) que se solape con él. El backend devuelve 409 con mensaje descriptivo
 - **Edición de reservas**: el propietario de una reserva (o un rol elevado) puede editarla desde el detalle en el calendario. Al hacer click en "Editar" se abre el wizard completo pre-relleno con todos los pasos (fecha, hora, máquinas, detalles). Al confirmar, las reservas originales se cancelan y se crean las nuevas con los datos actualizados. No se puede editar si la reserva está CANCELADA o RECHAZADA
-- **Revocación de certificación**: al revocar, la `CertificationRequest` se revierte a PENDING (no se elimina) para que el usuario pueda ser reprogramado sin hacer una nueva solicitud
-- **Cancelar sesión de certificación**: desde el popup del calendario, el admin puede cancelar toda la sesión de golpe; todas las solicitudes SCHEDULED vuelven a PENDING
+- **Revocación de certificación**: elimina la `Certification`. La usuaria vuelve a estado sin certificación y sus futuras reservas en esa categoría serán PENDING hasta que la certifiquen nuevamente
 - **Agrupación de actividades en el calendario**: cuando dos o más actividades se solapan en el tiempo, se reemplazan por un único evento "N actividades" (algoritmo union-find). Al hacer click se abre un modal que lista todas las actividades con opción de acceder a cada una individualmente
 - **Personalización de marca**: el color principal de la UI se almacena en BD por espacio y se aplica como CSS variables al cargar; el logo se resuelve desde `client/public/logo-{slug}.png` donde `slug` es el nombre del espacio normalizado (minúsculas, sin tildes ni espacios)
 

@@ -37,7 +37,8 @@ const EMPTY_FORM: FormState = { name: '', color: '#6b7280' };
 
 export default function CategoriesPage() {
   const { currentSpaceId } = useAuthStore();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [showInactive, setShowInactive] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
@@ -47,6 +48,12 @@ export default function CategoriesPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortState | null>(null);
   const handleSort = (key: string) => setSort(toggleSort(sort, key));
+
+  const categories = useMemo(
+    () => showInactive ? allCategories : allCategories.filter((c) => c.isActive),
+    [allCategories, showInactive]
+  );
+  const inactiveCount = useMemo(() => allCategories.filter((c) => !c.isActive).length, [allCategories]);
 
   const displayCategories = useMemo(() => {
     const q = search.toLowerCase();
@@ -59,8 +66,7 @@ export default function CategoriesPage() {
     return [...list].sort((a, b) => {
       const val = (x: Category) =>
         sort.key === 'name' ? x.name :
-        sort.key === 'slug' ? x.slug :
-        sort.key === 'isActive' ? String(x.isActive) : '';
+        sort.key === 'slug' ? x.slug : '';
       return compareVals(val(a), val(b), sort.dir);
     });
   }, [categories, search, sort]);
@@ -68,7 +74,7 @@ export default function CategoriesPage() {
   const load = async () => {
     try {
       setIsLoading(true);
-      setCategories(await categoryService.getAll(true));
+      setAllCategories(await categoryService.getAll(true));
     } catch {
       toast.error('Error al cargar categorías');
     } finally {
@@ -110,16 +116,6 @@ export default function CategoriesPage() {
       toast.error(msg ?? 'Error al guardar categoría');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleToggleActive = async (cat: Category) => {
-    try {
-      await categoryService.update(cat.id, { isActive: !cat.isActive });
-      toast.success(cat.isActive ? 'Categoría desactivada' : 'Categoría activada');
-      load();
-    } catch {
-      toast.error('Error al cambiar estado');
     }
   };
 
@@ -174,8 +170,22 @@ export default function CategoriesPage() {
         </div>
       </div>
 
+      {inactiveCount > 0 && (
+        <div className="mb-4 flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm">
+          <span className="text-amber-800">
+            Hay {inactiveCount} categoría{inactiveCount > 1 ? 's' : ''} inactiva{inactiveCount > 1 ? 's' : ''} oculta{inactiveCount > 1 ? 's' : ''}.
+          </span>
+          <button
+            onClick={() => setShowInactive((v) => !v)}
+            className="text-amber-700 underline font-medium hover:text-amber-900 ml-4"
+          >
+            {showInactive ? 'Ocultar inactivas' : 'Ver y eliminar inactivas'}
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {categories.length === 0 ? (
+        {displayCategories.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">
             No hay categorías creadas aún.
           </div>
@@ -186,20 +196,24 @@ export default function CategoriesPage() {
               <tr>
                 <SortableHeader label="Categoría" sortKey="name" sort={sort} onSort={handleSort} className="text-left" />
                 <SortableHeader label="Slug" sortKey="slug" sort={sort} onSort={handleSort} className="text-left hidden md:table-cell" />
-                <SortableHeader label="Estado" sortKey="isActive" sort={sort} onSort={handleSort} className="text-center" />
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {displayCategories.map((cat) => (
-                <tr key={cat.id} className={cat.isActive ? '' : 'opacity-60'}>
+                <tr key={cat.id} className={cat.isActive ? '' : 'bg-gray-50 opacity-70'}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div
                         className="w-4 h-4 rounded-full flex-shrink-0 border border-white shadow-sm"
                         style={{ backgroundColor: cat.color }}
                       />
-                      <span className="font-medium text-gray-900">{cat.name}</span>
+                      <div>
+                        <span className="font-medium text-gray-900">{cat.name}</span>
+                        {!cat.isActive && (
+                          <span className="ml-2 text-xs text-gray-400">(inactiva)</span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 hidden md:table-cell">
@@ -207,29 +221,16 @@ export default function CategoriesPage() {
                       {cat.slug}
                     </code>
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      cat.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                    }`}>
-                      {cat.isActive ? 'Activa' : 'Inactiva'}
-                    </span>
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => openEdit(cat)}
-                        className="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(cat)}
-                        className={`text-xs font-medium transition-colors ${
-                          cat.isActive ? 'text-amber-600 hover:text-amber-800' : 'text-green-600 hover:text-green-800'
-                        }`}
-                      >
-                        {cat.isActive ? 'Desactivar' : 'Activar'}
-                      </button>
+                      {cat.isActive && (
+                        <button
+                          onClick={() => openEdit(cat)}
+                          className="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors"
+                        >
+                          Editar
+                        </button>
+                      )}
                       <button
                         onClick={() => setDeleteTarget(cat)}
                         className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
@@ -321,7 +322,7 @@ export default function CategoriesPage() {
       {deleteTarget && (
         <ConfirmModal
           title="Eliminar categoría"
-          message={`¿Estás segura que quieres eliminar la categoría "${deleteTarget.name}"? Solo es posible si no tiene recursos asignados.`}
+          message={`¿Estás segura que quieres eliminar la categoría "${deleteTarget.name}"? Se eliminarán también sus recursos (si no tienen reservas activas) y las certificaciones asociadas.`}
           variant="danger"
           confirmLabel="Eliminar"
           onConfirm={handleDelete}

@@ -116,19 +116,49 @@ export const deleteCategory = async (req: Request, res: Response): Promise<void>
   try {
     const category = await prisma.category.findUnique({
       where: { id: req.params.id },
-      include: { _count: { select: { resources: true } } },
+      include: {
+        resources: {
+          include: { _count: { select: { bookings: { where: { status: { in: ['PENDING', 'CONFIRMED'] } } } } } },
+        },
+      },
     });
     if (!category) {
       res.status(404).json({ error: 'Categoría no encontrada' });
       return;
     }
-    if (category._count.resources > 0) {
+
+    // Bloquear si algún recurso tiene reservas activas (PENDING o CONFIRMED)
+    const blockedResources = category.resources.filter((r) => r._count.bookings > 0);
+    if (blockedResources.length > 0) {
+      const names = blockedResources.map((r) => r.name).join(', ');
       res.status(409).json({
-        error: `No se puede eliminar: hay ${category._count.resources} recurso(s) en esta categoría. Reasigna o elimina los recursos primero.`,
+        error: `No se puede eliminar: los siguientes recursos tienen reservas activas: ${names}. Cancela o rechaza esas reservas primero.`,
       });
       return;
     }
-    await prisma.category.delete({ where: { id: req.params.id } });
+
+    // Eliminar en cascada dentro de una transacción
+    await prisma.$transaction(async (tx) => {
+      const resourceIds = category.resources.map((r) => r.id);
+
+      if (resourceIds.length > 0) {
+        // Eliminar exenciones de capacitaciones
+        await tx.trainingExemption.deleteMany({ where: { resourceId: { in: resourceIds } } });
+        // Eliminar reservas canceladas/rechazadas del recurso
+        await tx.booking.deleteMany({
+          where: { resourceId: { in: resourceIds }, status: { in: ['CANCELLED', 'REJECTED'] } },
+        });
+        // Eliminar recursos
+        await tx.resource.deleteMany({ where: { id: { in: resourceIds } } });
+      }
+
+      // Eliminar certificaciones de esta categoría
+      await tx.certification.deleteMany({ where: { categoryId: req.params.id } });
+
+      // Eliminar la categoría
+      await tx.category.delete({ where: { id: req.params.id } });
+    });
+
     res.json({ message: 'Categoría eliminada' });
   } catch {
     res.status(500).json({ error: 'Error al eliminar categoría' });

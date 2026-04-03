@@ -243,8 +243,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
 | `Booking` | Reservas con status, purpose, campos especiales segun categoria. `isExceptional Boolean @default(false)`: omite validaciones de horario y duracion maxima (solo roles ADMIN/SUPER_ADMIN) |
 | `Maintenance` | Periodo de cierre del espacio. Campos: title, description?, startTime, endTime, spaceId, createdBy. Bloquea la creacion de cualquier reserva (normal o excepcional) que se solape con el periodo |
-| `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria) |
-| `CertificationRequest` | Solicitudes de certificacion |
+| `Certification` | Certificacion aprobada por categoria (unica por usuario+categoria). Creada directamente por roles elevados — no hay flujo de solicitud. |
 | `Training` | Sesiones de capacitacion con `capacity` (cupos), exenciones de recursos e inscripciones |
 | `TrainingExemption` | Bloqueo de recurso durante un training |
 | `TrainingEnrollment` | Inscripcion de usuaria a una capacitacion. Status CONFIRMED o WAITLIST. Unique(trainingId+userId). Al cancelar una CONFIRMED, la primera WAITLIST se promueve automaticamente |
@@ -259,14 +258,13 @@ Role:             SUPER_ADMIN | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA | USER
 
 BookingStatus:    PENDING | CONFIRMED | CANCELLED | REJECTED
 BookingPurpose:   LEARN | PRODUCE | DESIGN | REUNION
-CertReqStatus:    PENDING | SCHEDULED | APPROVED | REJECTED
 CommentTag:       GENERAL | MACHINE_ISSUE | ORDER | CLEANING
 CompanionRelation: CUIDADOS | AMISTAD | OTRO
 EnrollmentStatus: CONFIRMED | WAITLIST
 
 AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIED |
                   BOOKING_APPROVED | BOOKING_REJECTED | BOOKING_CANCELLED |
-                  CERT_REQUEST_APPROVED | CERT_REQUEST_REJECTED | CERTIFICATION_REVOKED |
+                  CERT_REQUEST_APPROVED | CERTIFICATION_REVOKED |
                   SPACE_CREATED | SPACE_UPDATED | SPACE_DELETED
 ```
 
@@ -407,7 +405,6 @@ GET      /api/health               <- health check con DB
 - **Horario de negocio**: reservas validadas contra `BusinessHours` del espacio tanto en frontend como en backend. Frontend usa strings HH:MM locales para evitar ambiguedad de zona horaria. Backend recibe `localDate`, `localStartTime`, `localEndTime` en el body de creacion de reserva y consulta `BusinessHours` via `findUnique({ spaceId_dayOfWeek })`. Comparacion HH:MM como string lexicografica es suficiente y sin timezone.
 - Duracion maxima de reserva configurable via `Space.maxBookingMinutes` (default 240 min = 4h, intervalos de 30). El backend valida contra este valor en createBooking y updateBooking; el frontend muestra el limite en tiempo real en el paso SCHEDULE del BookingWizard
 - Google Calendar solo sincroniza reservas CONFIRMED (no PENDING)
-- Maximo 10 usuarias por sesion de certificacion
 - Roles elevados pueden agendar a nombre de otra usuaria (`targetUserId` en el body)
 - Roles elevados pueden inscribir/desinscribir otras usuarias en capacitaciones (`targetUserId` en el body de enroll/unenroll)
 - `ESPACIO_REUNION` (slug): ya no aparece como opcion de categoria en el BookingWizard — se usa como **proposito** `REUNION`. El wizard auto-selecciona el recurso con slug `ESPACIO_REUNION` del espacio, salta el paso de maquinas y muestra campos especiales (N° asistentes, privacidad). La opcion REUNION solo es visible para ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA.
@@ -417,7 +414,8 @@ GET      /api/health               <- health check con DB
 - **Edicion de reservas:** el frontend abre el wizard completo pre-relleno via prop `editBookings?: Booking[]`. Al confirmar, el wizard cancela los bookings originales y crea los nuevos (estrategia cancelar+recrear). El backend `PATCH /api/bookings/:id` sigue disponible para cancelaciones individuales pero ya no se usa para edicion desde el calendario. El boton "Editar" llama `onEditBooking(bookings: Booking[])` en `CalendarView` → `handleEditBooking` en `CalendarPage`.
 - **Reservas excepcionales:** `isExceptional=true` en el body de `POST /api/bookings` omite: validacion de duracion maxima y validacion de horario de negocio. Las mantenciones siguen bloqueando. Solo roles elevados pueden crear reservas excepcionales; el flag es ignorado para USER.
 - **Mantenciones:** bloquean la creacion de cualquier reserva (normal o excepcional) cuyo rango se solape (`startA < endB AND endA > startB`). El backend devuelve 409 con nombre de la mantención. No hay limite de duracion para las mantenciones.
-- **Revocacion de certificacion:** `DELETE /admin/certifications/:id` elimina la `Certification` directamente. No hay `CertificationRequest` que actualizar (el modelo fue eliminado).
+- **Certificacion directa:** roles elevados certifican/revocan desde `/admin/certifications`. No hay flujo de solicitud (el modelo `CertificationRequest` y enum `CertReqStatus` fueron eliminados del schema). `POST /admin/certifications` hace `upsert` en `Certification`; `DELETE /admin/certifications/:id` la elimina.
+- **Revocacion de certificacion:** borra la fila `Certification`. La usuaria vuelve al estado "sin certificacion" y sus proximas reservas en esa categoria seran PENDING hasta ser re-certificada.
 - **Certificacion directa:** `POST /admin/certifications` crea una `Certification` con `upsert` (si ya existe la actualiza). Protegido con `requireElevated` para incluir LIDER_COMUNITARIA.
 - **Agrupacion de actividades en CalendarView (union-find):** `clusterVisibleEvents()` en `CalendarView.tsx` usa algoritmo union-find para detectar grupos de eventos que se solapan (`sA < eB && eA > sB`). Grupos de 1 → evento original; grupos de 2+ → evento cluster slate `#475569` con label "N actividades". Los `trainingBgEvents` (display:'background') se excluyen del clustering. El `handleDateClick` tambien usa la misma logica para detectar actividades al hacer click y abrir el `clusterModal` en lugar de ir directo al BookingModal.
 - **TrainingModal en modo edicion:** prop `initialTraining?: Training` — si se provee, pre-rellena todos los campos y llama `trainingService.update()` + `trainingService.updateExemptions()` al guardar. Las exenciones se muestran en ambos modos (crear y editar).
@@ -441,7 +439,7 @@ GET      /api/health               <- health check con DB
 - Logs estructurados en controllers: todos los `catch` usan `logger.error({ err }, 'msg')` via `lib/logger`
 - SPA fallback para react-router en prod
 - Prisma con logging segun NODE_ENV
-- Indexes en BD: Booking (userId, resourceId, status, startTime+endTime), CertificationRequest (userId, status)
+- Indexes en BD: Booking (userId, resourceId, status, startTime+endTime)
 - Lazy loading de todas las paginas (React.lazy + Suspense)
 - ErrorBoundary global en main.tsx
 - Timeout 15s en axios
