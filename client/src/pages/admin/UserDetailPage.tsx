@@ -25,13 +25,12 @@ const ENROLLMENT_BADGE: Record<string, { label: string; className: string }> = {
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin', ADMIN: 'Administrador',
-  LIDER_TECNICA: 'Líder Técnica', LIDER_COMUNITARIA: 'Líder Comunitaria', USER: 'Usuaria',
+  LIDER_COMUNITARIA: 'Líder Comunitaria', USER: 'Usuaria',
 };
 
 const ROLE_BADGE: Record<string, string> = {
   SUPER_ADMIN: 'bg-indigo-100 text-indigo-700',
   ADMIN: 'bg-purple-100 text-purple-700',
-  LIDER_TECNICA: 'bg-blue-100 text-blue-700',
   LIDER_COMUNITARIA: 'bg-teal-100 text-teal-700',
   USER: 'bg-gray-100 text-gray-600',
 };
@@ -52,7 +51,7 @@ export default function UserDetailPage() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const canManageBookings = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN' || me?.role === 'LIDER_COMUNITARIA';
-  const canManageCerts = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN' || me?.role === 'LIDER_TECNICA';
+  const canManageCerts = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN' || me?.role === 'LIDER_COMUNITARIA';
 
   const load = async () => {
     if (!id) return;

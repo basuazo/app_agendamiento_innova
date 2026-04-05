@@ -13,7 +13,7 @@ const router = Router();
 // Usuario
 router.get('/certifications/mine', authenticate, getMyCertifications);
 
-// Admin / Roles elevados (ADMIN, SUPER_ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA)
+// Admin / Roles elevados (ADMIN, SUPER_ADMIN, LIDER_COMUNITARIA)
 router.get('/admin/certifications', authenticate, requireElevated, getAllCertifications);
 router.post('/admin/certifications', authenticate, requireElevated, certifyUser);
 router.delete('/admin/certifications/:id', authenticate, requireElevated, revokeCertification);

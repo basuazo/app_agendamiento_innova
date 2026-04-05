@@ -172,7 +172,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
   try {
     const { resourceId, startTime: startRaw, endTime: endRaw, notes, purpose, produceItem, produceQty, quantity: quantityRaw, isPrivate, attendees: attendeesRaw, companionRelation, targetUserId, localDate, localStartTime, localEndTime, isExceptional: isExceptionalRaw } = req.body;
 
-    const ELEVATED = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'];
+    const ELEVATED = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'];
     const isElevatedActor = ELEVATED.includes(req.user!.role);
     // isExceptional solo permitido para roles elevados
     const isExceptional = !!(isExceptionalRaw && isElevatedActor);
@@ -451,7 +451,7 @@ export const updateBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    const isElevated = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(req.user!.role);
+    const isElevated = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(req.user!.role);
     if (!isElevated && booking.userId !== req.user!.id) {
       res.status(403).json({ error: 'No tienes permiso para editar esta reserva' });
       return;

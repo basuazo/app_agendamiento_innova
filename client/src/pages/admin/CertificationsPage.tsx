@@ -73,7 +73,6 @@ function UserCombobox({
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Admin',
   SUPER_ADMIN: 'Super Admin',
-  LIDER_TECNICA: 'Líder Técnica',
   LIDER_COMUNITARIA: 'Líder Comunitaria',
   USER: 'Usuaria',
 };

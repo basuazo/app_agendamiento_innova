@@ -23,7 +23,7 @@ export default function BookingModal({ isOpen, onClose, preselectedDate, presele
   const { create } = useBookingStore();
   const { resources, fetchAll } = useResourceStore();
   const { user } = useAuthStore();
-  const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(user?.role ?? '');
+  const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(user?.role ?? '');
 
   // Step 0 (admin only): user selection
   const [bookingForSelf, setBookingForSelf] = useState(true);

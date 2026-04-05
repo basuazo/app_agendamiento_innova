@@ -72,9 +72,9 @@ export default function Navbar() {
 
   // Helpers de permisos por rol
   const role = user?.role;
-  const isElevated       = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA' || role === 'LIDER_COMUNITARIA';
-  const canManageCerts   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA' || role === 'LIDER_COMUNITARIA';
-  const canManageTrainings = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_TECNICA';
+  const isElevated       = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
+  const canManageCerts   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
+  const canManageTrainings = role === 'ADMIN' || role === 'SUPER_ADMIN';
   const canManageCategories = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
   const canManageUsers   = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
   const canManageBookings = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'LIDER_COMUNITARIA';
@@ -289,7 +289,7 @@ export default function Navbar() {
             <Link to="/profile" className="text-right group">
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
               <p className="text-xs text-gray-500">
-                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_TECNICA' ? 'Líder Técnica' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
               </p>
             </Link>
             <button
@@ -462,7 +462,7 @@ export default function Navbar() {
             <Link to="/profile" className="group" onClick={() => setMobileMenuOpen(false)}>
               <p className="text-sm font-medium text-gray-900 group-hover:text-brand-600 transition-colors">{user?.name}</p>
               <p className="text-xs text-gray-500">
-                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_TECNICA' ? 'Líder Técnica' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
+                {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : user?.role === 'ADMIN' ? 'Administrador' : user?.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
               </p>
             </Link>
             <button

@@ -116,8 +116,8 @@ export default function CalendarPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [enrollTargetId, setEnrollTargetId] = useState('');
 
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA' || user?.role === 'LIDER_COMUNITARIA';
-  const canManageTrainings = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_TECNICA';
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN' || user?.role === 'LIDER_COMUNITARIA';
+  const canManageTrainings = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
   const canManageMaintenance = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const fetchTrainings = async () => {

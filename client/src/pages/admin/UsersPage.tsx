@@ -164,13 +164,11 @@ export default function UsersPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       u.role === 'SUPER_ADMIN' ? 'bg-indigo-100 text-indigo-700' :
                       u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
-                      u.role === 'LIDER_TECNICA' ? 'bg-blue-100 text-blue-700' :
                       u.role === 'LIDER_COMUNITARIA' ? 'bg-teal-100 text-teal-700' :
                       'bg-gray-100 text-gray-600'
                     }`}>
                       {u.role === 'SUPER_ADMIN' ? 'Super Admin' :
                        u.role === 'ADMIN' ? 'Admin' :
-                       u.role === 'LIDER_TECNICA' ? 'Líder Técnica' :
                        u.role === 'LIDER_COMUNITARIA' ? 'Líder Comunitaria' : 'Usuario'}
                     </span>
                   </td>
@@ -342,7 +340,6 @@ function EditUserModal({ user, isSuperAdmin, canChangeRole, onClose }: { user: U
               <select value={role} onChange={(e) => setRole(e.target.value as Role)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white">
                 <option value="USER">Usuario</option>
-                <option value="LIDER_TECNICA">Líder Técnica</option>
                 <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
                 <option value="ADMIN">Administrador</option>
               </select>
@@ -448,7 +445,6 @@ function CreateUserModal({ onClose, isSuperAdmin }: { onClose: () => void; isSup
             <select value={role} onChange={(e) => setRole(e.target.value as Role)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
               <option value="USER">Usuario</option>
-              <option value="LIDER_TECNICA">Líder Técnica</option>
               <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
               <option value="ADMIN">Administrador</option>
             </select>

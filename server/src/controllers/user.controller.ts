@@ -237,7 +237,7 @@ export const verifyUser = async (req: AuthRequest, res: Response): Promise<void>
 export const changeUserRole = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { role } = req.body;
-    if (!['ADMIN', 'USER', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(role)) {
+    if (!['ADMIN', 'USER', 'LIDER_COMUNITARIA'].includes(role)) {
       res.status(400).json({ error: 'Rol inválido.' });
       return;
     }
@@ -269,7 +269,7 @@ export const changeUserRole = async (req: AuthRequest, res: Response): Promise<v
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin', ADMIN: 'Administrador',
-  LIDER_TECNICA: 'Líder Técnica', LIDER_COMUNITARIA: 'Líder Comunitaria', USER: 'Usuario',
+  LIDER_COMUNITARIA: 'Líder Comunitaria', USER: 'Usuario',
 };
 
 export const exportUsers = async (req: AuthRequest, res: Response): Promise<void> => {

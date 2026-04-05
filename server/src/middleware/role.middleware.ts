@@ -3,9 +3,8 @@ import { AuthRequest } from './auth.middleware';
 
 // Grupos de roles reutilizables
 export const ADMIN_ROLES   = ['ADMIN', 'SUPER_ADMIN'] as const;
-export const TECNICA_ROLES = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA'] as const;      // certif. + recursos + trainings
 export const COMUNITARIA_ROLES = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'] as const; // reservas + usuarios + categorías
-export const ELEVATED_ROLES = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'] as const; // recursos
+export const ELEVATED_ROLES = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'] as const; // recursos
 
 /** Factory: permite acceso a cualquiera de los roles indicados */
 export const requireAnyOf = (...roles: string[]) =>
@@ -28,9 +27,6 @@ export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFun
   }
   next();
 };
-
-/** ADMIN + SUPER_ADMIN + LIDER_TECNICA: certif., trainings, recursos */
-export const requireTecnica = requireAnyOf(...TECNICA_ROLES);
 
 /** ADMIN + SUPER_ADMIN + LIDER_COMUNITARIA: reservas, categorías, verificar usuarios */
 export const requireComunitaria = requireAnyOf(...COMUNITARIA_ROLES);

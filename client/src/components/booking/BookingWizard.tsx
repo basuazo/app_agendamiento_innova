@@ -157,7 +157,7 @@ export default function BookingWizard({
   const { resources, fetchAll } = useResourceStore();
   const { user } = useAuthStore();
 
-  const isElevated = ['ADMIN', 'SUPER_ADMIN', 'LIDER_TECNICA', 'LIDER_COMUNITARIA'].includes(user?.role ?? '');
+  const isElevated = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(user?.role ?? '');
   const canBookReunion = ['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(user?.role ?? '');
 
   const [state, setState] = useState(() => makeInitial(preselectedDate));
@@ -168,6 +168,7 @@ export default function BookingWizard({
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [showProduceModal, setShowProduceModal] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Reiniciar al abrir
@@ -181,6 +182,7 @@ export default function BookingWizard({
       setStep(isEditMode ? 'SCHEDULE' : isElevated ? 'WHO' : 'SCHEDULE');
       setAvailability(null);
       setConfirmCancel(false);
+      setShowProduceModal(false);
       setExpandedCategories(new Set());
       fetchAll();
       certificationService.getMyCertifications().then(setCertifications).catch(() => {});
@@ -290,9 +292,18 @@ export default function BookingWizard({
     if (state.purpose === 'REUNION') {
       if (!salaResource) { toast.error('No hay espacio de reuniones disponible en este espacio'); return; }
       setStep('DETAILS');
+    } else if (state.purpose === 'PRODUCE') {
+      setShowProduceModal(true);
     } else {
       setStep('MACHINES');
     }
+  };
+
+  const handleProduceModalConfirm = () => {
+    if (!state.produceItem.trim()) { toast.error('Indica qué vas a producir'); return; }
+    if (!state.produceQty || parseInt(state.produceQty) < 1) { toast.error('Indica una cantidad válida'); return; }
+    setShowProduceModal(false);
+    setStep('MACHINES');
   };
 
   const handleMachinesNext = () => {
@@ -304,10 +315,6 @@ export default function BookingWizard({
   };
 
   const handleDetailsNext = () => {
-    if (state.purpose === 'PRODUCE') {
-      if (!state.produceItem.trim()) { toast.error('Indica qué vas a producir'); return; }
-      if (!state.produceQty || parseInt(state.produceQty) < 1) { toast.error('Indica la cantidad a producir'); return; }
-    }
     setStep('SUMMARY');
   };
 
@@ -428,6 +435,65 @@ export default function BookingWizard({
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
         {children}
       </div>
+      {/* Modal: ¿Qué vas a producir? */}
+      {showProduceModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-brand-50 flex items-center justify-center shrink-0">
+                <span className="text-xl">🧵</span>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">¿Qué vas a producir?</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Registra lo que planeas hacer en tu sesión</p>
+              </div>
+            </div>
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                  Artículo a producir *
+                </label>
+                <input
+                  type="text"
+                  value={state.produceItem}
+                  onChange={(e) => set('produceItem', e.target.value)}
+                  placeholder="Ej: Camisas, vestidos, bolsos…"
+                  autoFocus
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                  Cantidad *
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={state.produceQty}
+                  onChange={(e) => set('produceQty', e.target.value.replace(/\D/g, ''))}
+                  placeholder="1"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowProduceModal(false)}
+                className="flex-1 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                Volver
+              </button>
+              <button
+                onClick={handleProduceModalConfirm}
+                className="flex-1 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+              >
+                Continuar →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Diálogo de confirmación de cancelar */}
       {confirmCancel && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4">
@@ -694,7 +760,7 @@ export default function BookingWizard({
           onClick={handleScheduleNext}
           className="w-full py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 transition-colors"
         >
-          {state.purpose === 'REUNION' ? 'Continuar → Detalles' : 'Continuar → Máquinas'}
+          {state.purpose === 'REUNION' ? 'Continuar → Detalles' : state.purpose === 'PRODUCE' ? 'Continuar → ¿Qué producirás?' : 'Continuar → Máquinas'}
         </button>
       </div>
     );
@@ -912,34 +978,22 @@ export default function BookingWizard({
         </p>
 
         <div className="space-y-5">
-          {/* Producir: qué y cuánto */}
+          {/* Producir: resumen de lo ingresado en la modal previa */}
           {state.purpose === 'PRODUCE' && (
-            <div className="space-y-3">
+            <div className="bg-brand-50 border border-brand-100 rounded-xl px-4 py-3 flex items-start gap-3">
+              <span className="text-lg shrink-0">🧵</span>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                  ¿Qué vas a producir? *
-                </label>
-                <input
-                  type="text"
-                  value={state.produceItem}
-                  onChange={(e) => set('produceItem', e.target.value)}
-                  placeholder="Ej: Camisas, vestidos, bolsos…"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
+                <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-0.5">A producir</p>
+                <p className="text-sm text-gray-800 font-medium">{state.produceItem}</p>
+                <p className="text-xs text-gray-500">Cantidad: {state.produceQty}</p>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                  Cantidad *
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={state.produceQty}
-                  onChange={(e) => set('produceQty', e.target.value.replace(/\D/g, ''))}
-                  placeholder="1"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowProduceModal(true)}
+                className="ml-auto text-xs text-brand-600 hover:text-brand-800 font-medium shrink-0"
+              >
+                Editar
+              </button>
             </div>
           )}
 
