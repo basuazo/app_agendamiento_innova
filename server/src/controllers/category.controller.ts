@@ -118,7 +118,7 @@ export const deleteCategory = async (req: Request, res: Response): Promise<void>
       where: { id: req.params.id },
       include: {
         resources: {
-          include: { _count: { select: { bookings: { where: { status: { in: ['PENDING', 'CONFIRMED'] } } } } } },
+          include: { _count: { select: { bookings: { where: { status: { in: ['PENDING', 'CONFIRMED'] }, endTime: { gt: new Date() } } } } } },
         },
       },
     });

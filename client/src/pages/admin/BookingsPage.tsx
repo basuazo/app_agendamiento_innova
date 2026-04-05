@@ -51,15 +51,15 @@ export default function BookingsPage() {
   const [rejectingKey, setRejectingKey] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       const data = await bookingService.getAdminAll();
       setBookings(data);
     } catch {
       toast.error('Error al cargar reservas');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -88,7 +88,7 @@ export default function BookingsPage() {
     try {
       for (const b of group.bookings) await bookingService.cancel(b.id);
       toast.success('Reserva cancelada');
-      load();
+      load(true);
     } catch {
       toast.error('Error al cancelar');
     } finally {
@@ -101,7 +101,7 @@ export default function BookingsPage() {
     try {
       for (const b of group.bookings) await bookingService.approve(b.id);
       toast.success('Reserva aprobada');
-      load();
+      load(true);
     } catch {
       toast.error('Error al aprobar');
     } finally {
@@ -115,7 +115,7 @@ export default function BookingsPage() {
     try {
       for (const b of group.bookings) await bookingService.reject(b.id);
       toast.success('Reserva rechazada');
-      load();
+      load(true);
     } catch {
       toast.error('Error al rechazar');
     } finally {
