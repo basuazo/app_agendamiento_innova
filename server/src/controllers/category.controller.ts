@@ -116,38 +116,36 @@ export const deleteCategory = async (req: Request, res: Response): Promise<void>
   try {
     const category = await prisma.category.findUnique({
       where: { id: req.params.id },
-      include: {
-        resources: {
-          include: { _count: { select: { bookings: { where: { status: { in: ['PENDING', 'CONFIRMED'] }, endTime: { gt: new Date() } } } } } },
-        },
-      },
+      include: { resources: true },
     });
     if (!category) {
       res.status(404).json({ error: 'Categoría no encontrada' });
       return;
     }
 
-    // Bloquear si algún recurso tiene reservas activas (PENDING o CONFIRMED)
-    const blockedResources = category.resources.filter((r) => r._count.bookings > 0);
-    if (blockedResources.length > 0) {
-      const names = blockedResources.map((r) => r.name).join(', ');
-      res.status(409).json({
-        error: `No se puede eliminar: los siguientes recursos tienen reservas activas: ${names}. Cancela o rechaza esas reservas primero.`,
+    const resourceIds = category.resources.map((r) => r.id);
+
+    // Bloquear solo si hay reservas activas con fecha futura
+    if (resourceIds.length > 0) {
+      const now = new Date();
+      const activeCount = await prisma.booking.count({
+        where: { resourceId: { in: resourceIds }, status: { in: ['PENDING', 'CONFIRMED'] }, endTime: { gt: now } },
       });
-      return;
+      if (activeCount > 0) {
+        res.status(409).json({
+          error: `No se puede eliminar: hay ${activeCount} reserva(s) activa(s) próximas en esta categoría. Cancélalas primero.`,
+        });
+        return;
+      }
     }
 
     // Eliminar en cascada dentro de una transacción
     await prisma.$transaction(async (tx) => {
-      const resourceIds = category.resources.map((r) => r.id);
-
       if (resourceIds.length > 0) {
         // Eliminar exenciones de capacitaciones
         await tx.trainingExemption.deleteMany({ where: { resourceId: { in: resourceIds } } });
-        // Eliminar reservas canceladas/rechazadas del recurso
-        await tx.booking.deleteMany({
-          where: { resourceId: { in: resourceIds }, status: { in: ['CANCELLED', 'REJECTED'] } },
-        });
+        // Eliminar todas las reservas de esos recursos (pasadas, canceladas, rechazadas)
+        await tx.booking.deleteMany({ where: { resourceId: { in: resourceIds } } });
         // Eliminar recursos
         await tx.resource.deleteMany({ where: { id: { in: resourceIds } } });
       }

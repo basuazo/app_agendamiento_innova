@@ -91,15 +91,17 @@ export const deleteResource = async (req: Request, res: Response): Promise<void>
       res.status(404).json({ error: 'Recurso no encontrado' });
       return;
     }
+    const now = new Date();
     const activeBookingCount = await prisma.booking.count({
-      where: { resourceId: id, status: { in: ['PENDING', 'CONFIRMED'] }, endTime: { gt: new Date() } },
+      where: { resourceId: id, status: { in: ['PENDING', 'CONFIRMED'] }, endTime: { gt: now } },
     });
     if (activeBookingCount > 0) {
       res.status(409).json({ error: `No se puede eliminar: el recurso tiene ${activeBookingCount} reserva(s) activa(s) próximas. Cancélalas primero o desactívalo en su lugar.` });
       return;
     }
-    // Eliminar exenciones de capacitaciones antes de borrar el recurso
+    // Eliminar exenciones y todas las reservas pasadas/canceladas antes de borrar el recurso
     await prisma.trainingExemption.deleteMany({ where: { resourceId: id } });
+    await prisma.booking.deleteMany({ where: { resourceId: id } });
     await prisma.resource.delete({ where: { id } });
     res.json({ message: 'Recurso eliminado' });
   } catch (error) {
