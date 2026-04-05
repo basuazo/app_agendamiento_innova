@@ -42,6 +42,12 @@ export const createUser = async (req: AuthRequest, res: Response): Promise<void>
       return;
     }
 
+    // LIDER_COMUNITARIA solo puede crear usuarios con rol USER
+    if (req.user?.role === 'LIDER_COMUNITARIA' && role && role !== 'USER') {
+      res.status(403).json({ error: 'Solo puedes crear usuarias con rol Usuario' });
+      return;
+    }
+
     // SUPER_ADMIN puede crear en cualquier espacio (desde body), ADMIN crea en su propio espacio
     const spaceId = req.user!.role === 'SUPER_ADMIN' ? bodySpaceId : req.user!.spaceId;
     if (!spaceId) {
@@ -180,6 +186,10 @@ export const updateUser = async (req: AuthRequest, res: Response): Promise<void>
     if (phone !== undefined) updateData.phone = phone?.trim() || null;
     if (spaceId !== undefined) updateData.spaceId = spaceId || null;
     if (password) {
+      if (req.user?.role === 'LIDER_COMUNITARIA') {
+        res.status(403).json({ error: 'No tienes permiso para cambiar contraseñas' });
+        return;
+      }
       if (password.length < 6) {
         res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
         return;

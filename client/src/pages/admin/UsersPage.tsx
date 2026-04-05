@@ -17,6 +17,10 @@ type PendingAction =
 
 export default function UsersPage() {
   const { user: me, currentSpaceId } = useAuthStore();
+  const canCreateEditUsers = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN' || me?.role === 'LIDER_COMUNITARIA';
+  const canDeleteUsers = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN';
+  const canChangePassword = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN';
+  const canChangeRole = me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN';
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -98,25 +102,29 @@ export default function UsersPage() {
             placeholder="Buscar por nombre o email..."
             className="w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
-          <button
-            onClick={async () => { setExporting(true); try { await userService.exportAll(); } catch { toast.error('Error al exportar'); } finally { setExporting(false); } }}
-            disabled={exporting}
-            className="inline-flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-60"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            {exporting ? 'Exportando...' : 'Exportar Excel'}
-          </button>
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
-          >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-            Nueva Usuaria
-          </button>
+          {canDeleteUsers && (
+            <button
+              onClick={async () => { setExporting(true); try { await userService.exportAll(); } catch { toast.error('Error al exportar'); } finally { setExporting(false); } }}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-60"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {exporting ? 'Exportando...' : 'Exportar Excel'}
+            </button>
+          )}
+          {canCreateEditUsers && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Nueva Usuaria
+            </button>
+          )}
         </div>
       </div>
 
@@ -190,18 +198,22 @@ export default function UsersPage() {
                               Verificar
                             </button>
                           )}
-                          <button
-                            onClick={() => setEditTarget(u)}
-                            className="text-xs text-gray-600 hover:text-gray-900 font-medium"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => setPending({ kind: 'delete', id: u.id, name: u.name })}
-                            className="text-xs text-red-500 hover:text-red-700 font-medium"
-                          >
-                            Eliminar
-                          </button>
+                          {canCreateEditUsers && (
+                            <button
+                              onClick={() => setEditTarget(u)}
+                              className="text-xs text-gray-600 hover:text-gray-900 font-medium"
+                            >
+                              Editar
+                            </button>
+                          )}
+                          {canDeleteUsers && (
+                            <button
+                              onClick={() => setPending({ kind: 'delete', id: u.id, name: u.name })}
+                              className="text-xs text-red-500 hover:text-red-700 font-medium"
+                            >
+                              Eliminar
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -217,6 +229,7 @@ export default function UsersPage() {
       {showForm && (
         <CreateUserModal
           isSuperAdmin={me?.role === 'SUPER_ADMIN'}
+          canChangeRole={canChangeRole}
           onClose={() => { setShowForm(false); load(); }}
         />
       )}
@@ -225,7 +238,8 @@ export default function UsersPage() {
         <EditUserModal
           user={editTarget}
           isSuperAdmin={me?.role === 'SUPER_ADMIN'}
-          canChangeRole={me?.role === 'ADMIN' || me?.role === 'SUPER_ADMIN'}
+          canChangeRole={canChangeRole}
+          canChangePassword={canChangePassword}
           onClose={() => { setEditTarget(null); load(); }}
         />
       )}
@@ -256,7 +270,7 @@ export default function UsersPage() {
   );
 }
 
-function EditUserModal({ user, isSuperAdmin, canChangeRole, onClose }: { user: User; isSuperAdmin: boolean; canChangeRole: boolean; onClose: () => void }) {
+function EditUserModal({ user, isSuperAdmin, canChangeRole, canChangePassword, onClose }: { user: User; isSuperAdmin: boolean; canChangeRole: boolean; canChangePassword: boolean; onClose: () => void }) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [organization, setOrganization] = useState(user.organization ?? '');
@@ -324,7 +338,7 @@ function EditUserModal({ user, isSuperAdmin, canChangeRole, onClose }: { user: U
               placeholder="+56 9 1234 5678"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
-          {canChangeRole && (
+          {canChangePassword && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nueva contraseña <span className="text-gray-400 font-normal">(dejar vacío para no cambiar)</span>
@@ -373,7 +387,7 @@ function EditUserModal({ user, isSuperAdmin, canChangeRole, onClose }: { user: U
   );
 }
 
-function CreateUserModal({ onClose, isSuperAdmin }: { onClose: () => void; isSuperAdmin: boolean }) {
+function CreateUserModal({ onClose, isSuperAdmin, canChangeRole }: { onClose: () => void; isSuperAdmin: boolean; canChangeRole: boolean }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [organization, setOrganization] = useState('');
@@ -440,15 +454,17 @@ function CreateUserModal({ onClose, isSuperAdmin }: { onClose: () => void; isSup
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-              <option value="USER">Usuario</option>
-              <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
-              <option value="ADMIN">Administrador</option>
-            </select>
-          </div>
+          {canChangeRole && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+              <select value={role} onChange={(e) => setRole(e.target.value as Role)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="USER">Usuario</option>
+                <option value="LIDER_COMUNITARIA">Líder Comunitaria</option>
+                <option value="ADMIN">Administrador</option>
+              </select>
+            </div>
+          )}
           {isSuperAdmin && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Espacio *</label>

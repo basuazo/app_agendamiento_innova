@@ -9,10 +9,10 @@ const router = Router();
 router.get('/', authenticate, requireElevated, getUsers);
 router.get('/export', authenticate, requireAdmin, exportUsers);
 router.get('/audit-logs', authenticate, requireAdmin, getAuditLogs);
-router.post('/', authenticate, requireAdmin, createUser);
+router.post('/', authenticate, requireComunitaria, createUser);
 router.get('/:id/summary', authenticate, requireElevated, getUserSummary);
 router.delete('/:id', authenticate, requireAdmin, deleteUser);
-router.patch('/:id', authenticate, requireAdmin, updateUser);
+router.patch('/:id', authenticate, requireComunitaria, updateUser);
 router.patch('/:id/verify', authenticate, requireComunitaria, verifyUser);
 router.patch('/:id/role', authenticate, requireAdmin, changeUserRole);
 
