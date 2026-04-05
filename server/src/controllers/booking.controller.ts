@@ -375,7 +375,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
     if (resource.category.slug === 'ESPACIO_REUNION' && isPrivate) {
       // Modo privado → siempre requiere aprobación del admin
       bookingStatus = 'PENDING';
-    } else if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && resource.requiresCertification) {
+    } else if (!['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(req.user!.role) && resource.requiresCertification) {
       const cert = await prisma.certification.findUnique({
         where: { userId_categoryId: { userId: req.user!.id, categoryId: resource.categoryId } },
       });
@@ -558,7 +558,7 @@ export const cancelBooking = async (req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
-    if (!['ADMIN', 'SUPER_ADMIN'].includes(req.user!.role) && booking.userId !== req.user!.id) {
+    if (!['ADMIN', 'SUPER_ADMIN', 'LIDER_COMUNITARIA'].includes(req.user!.role) && booking.userId !== req.user!.id) {
       res.status(403).json({ error: 'No tienes permiso para cancelar esta reserva' });
       return;
     }
