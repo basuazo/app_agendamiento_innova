@@ -12,8 +12,11 @@ export const settingsService = {
     maxCapacity: number,
     maxCapacityReunion: number,
     maxBookingMinutes: number,
+    lunchBreakEnabled: boolean,
+    lunchBreakStart: string | null,
+    lunchBreakEnd: string | null,
   ): Promise<SpaceSettings> => {
-    const res = await api.put<SpaceSettings>('/settings/business-hours', { days, maxCapacity, maxCapacityReunion, maxBookingMinutes });
+    const res = await api.put<SpaceSettings>('/settings/business-hours', { days, maxCapacity, maxCapacityReunion, maxBookingMinutes, lunchBreakEnabled, lunchBreakStart, lunchBreakEnd });
     return res.data;
   },
 

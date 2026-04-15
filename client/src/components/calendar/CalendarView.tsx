@@ -117,6 +117,7 @@ interface Props {
   isAdmin?: boolean;
   currentUserId?: string;
   businessHours?: BusinessHours[];
+  lunchBreak?: { enabled: boolean; start: string; end: string } | null;
   onSlotClick: (date: Date) => void;
   onTrainingClick?: (training: Training) => void;
   onMaintenanceClick?: (maintenance: Maintenance) => void;
@@ -137,6 +138,7 @@ export default function CalendarView({
   isAdmin = false,
   currentUserId,
   businessHours = [],
+  lunchBreak,
   onSlotClick,
   onTrainingClick,
   onMaintenanceClick,
@@ -146,6 +148,7 @@ export default function CalendarView({
   const [detail, setDetail] = useState<DetailModal>(null);
   const [clusterModal, setClusterModal] = useState<ClusterModal>(null);
   const [showClosedPopup, setShowClosedPopup] = useState(false);
+  const [showLunchPopup, setShowLunchPopup] = useState(false);
 
   const [confirmCancelBooking, setConfirmCancelBooking] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
@@ -261,8 +264,27 @@ export default function CalendarView({
       extendedProps: { kind: 'maintenance' as const, maintenance: m },
     }));
 
-    return [...bgTrainings, ...bgMaintenances, ...maintenanceLabels, ...clusterVisibleEvents(rawVisibleEvents)];
-  }, [rawVisibleEvents, trainings, maintenances]);
+    // Eventos de fondo de colación: un evento por día en ventana de ±120 días
+    const bgLunchBreak: object[] = [];
+    if (lunchBreak?.enabled && lunchBreak.start && lunchBreak.end) {
+      const today = new Date();
+      for (let i = 0; i <= 120; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        const dateStr = d.toISOString().slice(0, 10);
+        bgLunchBreak.push({
+          id: `lunch-bg-${dateStr}`,
+          start: `${dateStr}T${lunchBreak.start}:00`,
+          end: `${dateStr}T${lunchBreak.end}:00`,
+          display: 'background' as const,
+          color: '#fecaca',
+          extendedProps: { kind: 'lunchBg' as const },
+        });
+      }
+    }
+
+    return [...bgTrainings, ...bgLunchBreak, ...bgMaintenances, ...maintenanceLabels, ...clusterVisibleEvents(rawVisibleEvents)];
+  }, [rawVisibleEvents, trainings, maintenances, lunchBreak]);
 
   // ─── Horarios de negocio FullCalendar ───────────────────────────────────
 
@@ -294,6 +316,21 @@ export default function CalendarView({
     if (businessHours.length > 0 && !isWithinBusinessHours(date, businessHours)) {
       setShowClosedPopup(true);
       return;
+    }
+
+    // Verificar si cae en horario de colación
+    if (lunchBreak?.enabled && lunchBreak.start && lunchBreak.end) {
+      const slotH = date.getHours();
+      const slotM = date.getMinutes();
+      const slotMin = slotH * 60 + slotM;
+      const [lsH, lsM] = lunchBreak.start.split(':').map(Number);
+      const [leH, leM] = lunchBreak.end.split(':').map(Number);
+      const lunchStartMin = lsH * 60 + lsM;
+      const lunchEndMin = leH * 60 + leM;
+      if (slotMin >= lunchStartMin && slotMin < lunchEndMin) {
+        setShowLunchPopup(true);
+        return;
+      }
     }
 
     const items: ClusterItem[] = [];
@@ -377,8 +414,8 @@ export default function CalendarView({
               );
             }
 
-            // Background (training)
-            if (props.kind === 'trainingBg') return null;
+            // Background events (no content)
+            if (props.kind === 'trainingBg' || props.kind === 'lunchBg') return null;
 
             // Training label individual
             if (props.kind === 'training') {
@@ -441,7 +478,7 @@ export default function CalendarView({
           }}
           eventClick={(info) => {
             const props = info.event.extendedProps;
-            if (props.kind === 'trainingBg' || props.kind === 'maintenanceBg') return;
+            if (props.kind === 'trainingBg' || props.kind === 'maintenanceBg' || props.kind === 'lunchBg') return;
 
             // Mantención: abrir detalle directo (no aplica cluster)
             if (props.kind === 'maintenance') {
@@ -495,6 +532,34 @@ export default function CalendarView({
               </div>
             </div>
             <button onClick={() => setShowClosedPopup(false)}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2.5 rounded-lg transition-colors">
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Popup: horario de colación ────────────────────────────────────── */}
+      {showLunchPopup && lunchBreak && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setShowLunchPopup(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-1">Horario de colación</h3>
+                <p className="text-sm text-gray-600">
+                  No se puede agendar en horario de colación. Debes agendar antes de las{' '}
+                  <strong>{lunchBreak.start}</strong> y después de las{' '}
+                  <strong>{lunchBreak.end}</strong>.
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setShowLunchPopup(false)}
               className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium py-2.5 rounded-lg transition-colors">
               Entendido
             </button>

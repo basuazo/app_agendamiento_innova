@@ -107,6 +107,7 @@ export default function CalendarPage() {
   const [maintenances, setMaintenances] = useState<Maintenance[]>([]);
   const [businessHours, setBusinessHours] = useState<BusinessHours[]>([]);
   const [maxBookingMinutes, setMaxBookingMinutes] = useState<number>(240);
+  const [lunchBreak, setLunchBreak] = useState<{ enabled: boolean; start: string; end: string } | null>(null);
   const [hoursLoaded, setHoursLoaded] = useState(false);
   const [selectedTraining, setSelectedTraining] = useState<Training | null>(null);
   const [selectedMaintenance, setSelectedMaintenance] = useState<Maintenance | null>(null);
@@ -145,6 +146,11 @@ export default function CalendarPage() {
       const data = await settingsService.getBusinessHours();
       setBusinessHours(data.days);
       setMaxBookingMinutes(data.maxBookingMinutes ?? 240);
+      if (data.lunchBreakEnabled && data.lunchBreakStart && data.lunchBreakEnd) {
+        setLunchBreak({ enabled: true, start: data.lunchBreakStart, end: data.lunchBreakEnd });
+      } else {
+        setLunchBreak(null);
+      }
     } catch {
       // silent — el calendario usará horarios por defecto
     } finally {
@@ -423,6 +429,7 @@ export default function CalendarPage() {
           isAdmin={isAdmin}
           currentUserId={user?.id}
           businessHours={businessHours}
+          lunchBreak={lunchBreak}
           onSlotClick={handleSlotClick}
           onTrainingClick={handleTrainingClick}
           onMaintenanceClick={handleMaintenanceClick}
@@ -491,6 +498,7 @@ export default function CalendarPage() {
         preselectedDate={editBookings ? undefined : selectedDate}
         businessHours={businessHours}
         maxBookingMinutes={maxBookingMinutes}
+        lunchBreak={lunchBreak}
         editBookings={editBookings}
       />
 

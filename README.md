@@ -104,32 +104,31 @@ npm run dev
 |-----|-------------|
 | `SUPER_ADMIN` | Gestiona todos los espacios. Selecciona el espacio activo en el Navbar. Sin spaceId propio. |
 | `ADMIN` | Administra su espacio: usuarios, recursos, categorías, reservas, certificaciones, horarios. |
-| `LIDER_TECNICA` | Gestiona capacitaciones, certificaciones y recursos. Sin acceso a usuarios, reservas ni categorías. |
-| `LIDER_COMUNITARIA` | Aprueba reservas, gestiona categorías y recursos, verifica nuevos usuarios. |
+| `LIDER_COMUNITARIA` | Aprueba reservas, gestiona categorías, recursos y certificaciones, verifica y crea/edita usuarias. |
 | `USER` | Reserva máquinas, accede a la comunidad, consulta sus certificaciones. |
 
 **Matriz de permisos resumida:**
 
-| Acción | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA |
-|--------|:-----:|:-------------:|:-----------------:|
-| Gestionar recursos | ✓ | ✓ | ✓ |
-| Gestionar categorías | ✓ | — | ✓ |
-| Certificar / revocar usuarias | ✓ | ✓ | ✓ |
-| Capacitaciones (crear/eliminar) | ✓ | ✓ | — |
-| Exportar capacitaciones a Excel | ✓ | ✓ | — |
-| Inscribir/desinscribir otras usuarias | ✓ | ✓ | ✓ |
-| Aprobar/rechazar reservas | ✓ | — | ✓ |
-| Ver todas las reservas | ✓ | — | ✓ |
-| Exportar reservas a Excel | ✓ | — | ✓ |
-| Agendar por otra usuaria | ✓ | ✓ | ✓ |
-| Ver lista de usuarios | ✓ | ✓ | ✓ |
-| Verificar nuevos usuarios | ✓ | — | ✓ |
-| Crear/editar/eliminar usuarios | ✓ | — | — |
-| Configurar horarios y aforo | ✓ | — | — |
-| Hora excepcional (sin restricciones) | ✓ | — | — |
-| Gestionar mantenciones / cierres | ✓ | — | — |
-| Exportar usuarios a Excel | ✓ | — | — |
-| Ver ficha de usuaria | ✓ | ✓ | ✓ |
+| Acción | ADMIN | LIDER_COMUNITARIA |
+|--------|:-----:|:-----------------:|
+| Gestionar recursos | ✓ | ✓ |
+| Gestionar categorías | ✓ | ✓ |
+| Certificar / revocar usuarias | ✓ | ✓ |
+| Capacitaciones (crear/eliminar/exportar) | ✓ | — |
+| Inscribir/desinscribir otras usuarias | ✓ | ✓ |
+| Aprobar/rechazar reservas | ✓ | ✓ |
+| Ver todas las reservas | ✓ | ✓ |
+| Exportar reservas a Excel | ✓ | ✓ |
+| Agendar por otra usuaria | ✓ | ✓ |
+| Ver lista de usuarios | ✓ | ✓ |
+| Verificar nuevos usuarios | ✓ | ✓ |
+| Crear/editar usuarias (sin cambiar contraseña) | ✓ | ✓ |
+| Eliminar usuarios / cambiar contraseña / cambiar rol | ✓ | — |
+| Configurar horarios y aforo | ✓ | — |
+| Hora excepcional (sin restricciones) | ✓ | — |
+| Gestionar mantenciones / cierres | ✓ | — |
+| Exportar usuarios a Excel | ✓ | — |
+| Ver ficha de usuaria | ✓ | ✓ |
 
 El registro de nuevos usuarios queda en estado **pendiente** hasta que un admin o Líder Comunitaria lo verifique.
 
@@ -152,14 +151,15 @@ El header `X-Space-Id` se envía automáticamente en cada request del frontend. 
 - **Calendario interactivo**: vista semanal con FullCalendar. Las actividades que se solapan en el tiempo se agrupan automáticamente en un evento único "N actividades" (cluster). Hacer click en cualquier evento — sea uno solo o un cluster — siempre abre el modal de actividades del horario, mostrando la lista de actividades y el botón "Nueva actividad en este horario". Las reservas multi-máquina se muestran como un único evento con gradiente azul→violeta→rojo.
 - **Reservas centradas en persona (wizard multi-paso)**: el flujo de reserva es por persona, no por máquina. Un wizard guía en 4–5 pasos: 1) ¿para quién? (roles elevados), 2) fecha/hora/propósito, 3) selección de máquinas (multi-select con categorías en acordeón), 4) detalles, 5) resumen. Se pueden reservar varias máquinas a la vez en el mismo horario. Si se cancela el proceso, aparece un diálogo de confirmación antes de perder los datos. La edición de una reserva abre el wizard completo pre-relleno con todos los datos, cancela las reservas originales y crea las nuevas al confirmar.
 - **Validación de horario de negocio**: el wizard muestra el horario del espacio en tiempo real y bloquea horas fuera del rango configurado, tanto en frontend (feedback inmediato) como en backend (validación de seguridad).
-- **Sistema de certificaciones**: ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA certifican y revocan directamente desde `/admin/certifications`. La página tiene un combobox de búsqueda de usuarias y muestra una tabla con el estado de certificación por categoría. Certificar abre una fila expandible para ingresar notas opcionales. No hay flujo de solicitudes ni sesiones programadas — la certifcación es un acto directo del rol elevado.
-- **Capacitaciones**: el admin/Líder Técnica crea y edita sesiones de capacitación con cupos y horarios configurables (HH:MM). Las usuarias se inscriben desde la pestaña "Capacitaciones" en `/my-bookings` o desde el popup de la capacitación en el calendario. Cupos llenos → lista de espera con promoción automática. Desde el popup del calendario el admin puede editar, eliminar o agendar en el mismo horario (si hay recursos libres por exenciones). La página `/admin/trainings` muestra el listado completo con las inscritas.
+- **Sistema de certificaciones**: ADMIN y LIDER_COMUNITARIA certifican y revocan directamente desde `/admin/certifications`. La página tiene un combobox de búsqueda de usuarias y muestra una tabla con el estado de certificación por categoría. Certificar abre una fila expandible para ingresar notas opcionales. No hay flujo de solicitudes ni sesiones programadas — la certificación es un acto directo del rol elevado.
+- **Capacitaciones**: solo ADMIN puede crear y editar sesiones de capacitación con cupos y horarios configurables (HH:MM). Las usuarias se inscriben desde la pestaña "Capacitaciones" en `/my-bookings` o desde el popup de la capacitación en el calendario. Cupos llenos → lista de espera con promoción automática. Desde el popup del calendario el admin puede editar, eliminar o agendar en el mismo horario (si hay recursos libres por exenciones). La página `/admin/trainings` muestra el listado completo con las inscritas.
 - **Inscripción por otras usuarias**: los roles elevados pueden inscribir y desinscribir a otras usuarias en capacitaciones desde `/admin/trainings` y también desde el popup de capacitación en el calendario, usando un combobox de búsqueda por nombre o email. La lista de inscritas es visible para todas las usuarias (solo lectura para USER).
-- **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, ADMIN y LIDER_TECNICA pueden descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones.
+- **Exportación de capacitaciones a Excel**: desde `/admin/trainings`, solo ADMIN puede descargar un `.xlsx` con el listado de todas las capacitaciones y sus inscripciones.
 - **Sala de reuniones como propósito**: la opción "Espacio de Reuniones" ya no aparece como una categoría de máquina, sino como un **propósito** en el wizard de reservas, visible solo para LIDER_COMUNITARIA, ADMIN y SUPER_ADMIN. Al seleccionarla se salta la selección de máquinas (se auto-asigna la sala), y se muestran campos de N° de asistentes, privacidad y notas contextuales.
 - **Comunidad**: foro interno con posts etiquetados (GENERAL, MACHINE_ISSUE, ORDER, CLEANING) e imágenes.
 - **Tablas admin ordenables y responsivas**: todas las tablas admin permiten ordenar A→Z / Z→A y filtrar con búsqueda en tiempo real. En móvil hacen scroll horizontal.
-- **Roles jerárquicos**: cinco roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_TECNICA, LIDER_COMUNITARIA, USER).
+- **Roles jerárquicos**: cuatro roles con permisos granulares (SUPER_ADMIN, ADMIN, LIDER_COMUNITARIA, USER).
+- **Registro de qué se va a producir**: al seleccionar el propósito "Producir" en el wizard, se abre una modal intermedia que solicita el artículo a producir y la cantidad antes de pasar a la selección de máquinas.
 - **Agendar por otra usuaria**: todos los roles elevados pueden crear reservas a nombre de cualquier usuaria del espacio. El paso "¿Para quién?" es el primero del wizard y aparece solo para estos roles.
 - **Exportación de reservas a Excel**: desde la página Todas las Reservas, ADMIN y LIDER_COMUNITARIA pueden descargar un `.xlsx` con el detalle completo.
 - **Aforo configurable**: cada espacio tiene dos límites editables desde Configuración — uno para máquinas y otro para la sala de reuniones.
@@ -259,9 +259,9 @@ Si no se configura, la app funciona igualmente. Las reservas solo se guardan en 
 - Google Calendar sincroniza solo reservas CONFIRMED
 - Registro auto-servicio → `isVerified=false`; admin debe verificar antes de que pueda ingresar
 - **Soft delete de usuarios**: `deletedAt` marca la eliminación sin borrar el historial. Un usuario eliminado no aparece en listas ni puede iniciar sesión. Si se crea un usuario con el mismo email, la cuenta se reactiva con los nuevos datos
-- **Eliminación de recursos**: solo si no tienen reservas asociadas. Si las tienen, el sistema indica desactivar en su lugar
+- **Eliminación de recursos**: solo bloqueada si hay reservas activas (PENDING o CONFIRMED) con fecha futura. Reservas pasadas o canceladas no impiden la eliminación
 - **Inscripción a capacitaciones**: cupos configurables por sesión. Al llenarse, las siguientes inscripciones van a lista de espera. Al cancelar una inscripción CONFIRMED, la primera en espera se promueve automáticamente a CONFIRMED
-- **Inscripción por roles elevados**: ADMIN, SUPER_ADMIN, LIDER_TECNICA y LIDER_COMUNITARIA pueden inscribir y desinscribir a otras usuarias en capacitaciones
+- **Inscripción por roles elevados**: ADMIN, SUPER_ADMIN y LIDER_COMUNITARIA pueden inscribir y desinscribir a otras usuarias en capacitaciones
 - **Hora excepcional**: las reservas marcadas como `isExceptional` (solo roles ADMIN/SUPER_ADMIN) omiten la validación de horario de negocio y de duración máxima. Las mantenciones sí las bloquean igualmente
 - **Mantenciones**: un período de mantenimiento bloquea la creación de **cualquier** reserva (normal o excepcional) que se solape con él. El backend devuelve 409 con mensaje descriptivo
 - **Edición de reservas**: el propietario de una reserva (o un rol elevado) puede editarla desde el detalle en el calendario. Al hacer click en "Editar" se abre el wizard completo pre-relleno con todos los pasos (fecha, hora, máquinas, detalles). Al confirmar, las reservas originales se cancelan y se crean las nuevas con los datos actualizados. No se puede editar si la reserva está CANCELADA o RECHAZADA

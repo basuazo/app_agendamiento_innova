@@ -19,13 +19,16 @@ export const getBusinessHours = async (req: AuthRequest, res: Response): Promise
     }
     const [hours, space] = await Promise.all([
       prisma.businessHours.findMany({ where: { spaceId }, orderBy: { dayOfWeek: 'asc' } }),
-      prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true } }),
+      prisma.space.findUnique({ where: { id: spaceId }, select: { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true, lunchBreakEnabled: true, lunchBreakStart: true, lunchBreakEnd: true } }),
     ]);
     res.json({
       days: hours,
       maxCapacity: space?.maxCapacity ?? 12,
       maxCapacityReunion: space?.maxCapacityReunion ?? 12,
       maxBookingMinutes: space?.maxBookingMinutes ?? 240,
+      lunchBreakEnabled: space?.lunchBreakEnabled ?? false,
+      lunchBreakStart: space?.lunchBreakStart ?? null,
+      lunchBreakEnd: space?.lunchBreakEnd ?? null,
     });
   } catch {
     res.status(500).json({ error: 'Error al obtener horarios' });
@@ -40,11 +43,14 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       return;
     }
 
-    const { days, maxCapacity, maxCapacityReunion, maxBookingMinutes } = req.body as {
+    const { days, maxCapacity, maxCapacityReunion, maxBookingMinutes, lunchBreakEnabled, lunchBreakStart, lunchBreakEnd } = req.body as {
       days: { dayOfWeek: number; isOpen: boolean; openTime: string; closeTime: string }[];
       maxCapacity?: number;
       maxCapacityReunion?: number;
       maxBookingMinutes?: number;
+      lunchBreakEnabled?: boolean;
+      lunchBreakStart?: string | null;
+      lunchBreakEnd?: string | null;
     };
 
     if (!Array.isArray(days) || days.length !== 7) {
@@ -65,12 +71,20 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
     }
 
     const VALID_BOOKING_MINUTES = [30, 60, 90, 120, 150, 180, 210, 240];
-    const spaceUpdate: { maxCapacity?: number; maxCapacityReunion?: number; maxBookingMinutes?: number } = {};
+    const spaceUpdate: {
+      maxCapacity?: number; maxCapacityReunion?: number; maxBookingMinutes?: number;
+      lunchBreakEnabled?: boolean; lunchBreakStart?: string | null; lunchBreakEnd?: string | null;
+    } = {};
     if (typeof maxCapacity === 'number' && maxCapacity >= 1) spaceUpdate.maxCapacity = maxCapacity;
     if (typeof maxCapacityReunion === 'number' && maxCapacityReunion >= 1) spaceUpdate.maxCapacityReunion = maxCapacityReunion;
     if (typeof maxBookingMinutes === 'number' && VALID_BOOKING_MINUTES.includes(maxBookingMinutes)) spaceUpdate.maxBookingMinutes = maxBookingMinutes;
+    if (typeof lunchBreakEnabled === 'boolean') spaceUpdate.lunchBreakEnabled = lunchBreakEnabled;
+    if (lunchBreakEnabled) {
+      spaceUpdate.lunchBreakStart = lunchBreakStart ?? null;
+      spaceUpdate.lunchBreakEnd = lunchBreakEnd ?? null;
+    }
 
-    const spaceSelect = { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true } as const;
+    const spaceSelect = { maxCapacity: true, maxCapacityReunion: true, maxBookingMinutes: true, lunchBreakEnabled: true, lunchBreakStart: true, lunchBreakEnd: true } as const;
     const [updatedDays, space] = await Promise.all([
       Promise.all(
         days.map((d) =>
@@ -91,6 +105,9 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response): Prom
       maxCapacity: space?.maxCapacity ?? 12,
       maxCapacityReunion: space?.maxCapacityReunion ?? 12,
       maxBookingMinutes: space?.maxBookingMinutes ?? 240,
+      lunchBreakEnabled: space?.lunchBreakEnabled ?? false,
+      lunchBreakStart: space?.lunchBreakStart ?? null,
+      lunchBreakEnd: space?.lunchBreakEnd ?? null,
     });
   } catch {
     res.status(500).json({ error: 'Error al actualizar horarios' });

@@ -30,4 +30,15 @@ export const userService = {
       a.click();
       window.URL.revokeObjectURL(url);
     }),
+
+  exportSummary: (id: string, name: string) =>
+    api.get(`/users/${id}/export`, { responseType: 'blob' }).then((r) => {
+      const url = window.URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_');
+      a.download = `usuaria_${safeName}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }),
 };

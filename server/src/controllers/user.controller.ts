@@ -315,6 +315,89 @@ export const exportUsers = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+export const exportUserSummary = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const user = await prisma.user.findUnique({ where: { id, deletedAt: null }, select: USER_SELECT });
+    if (!user) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
+
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const [bookings, enrollments, certifications] = await Promise.all([
+      prisma.booking.findMany({
+        where: { userId: id, startTime: { gte: sixMonthsAgo } },
+        include: {
+          resource: { select: { name: true, category: { select: { name: true } } } },
+        },
+        orderBy: { startTime: 'desc' },
+      }),
+      prisma.trainingEnrollment.findMany({
+        where: { userId: id, training: { startTime: { gte: sixMonthsAgo } } },
+        include: { training: { select: { title: true, startTime: true, endTime: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.certification.findMany({
+        where: { userId: id },
+        include: {
+          category: { select: { name: true } },
+          certifier: { select: { name: true } },
+        },
+        orderBy: { certifiedAt: 'desc' },
+      }),
+    ]);
+
+    const fmtDate = (d: Date) => d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const fmtTime = (d: Date) => d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const STATUS_LABELS: Record<string, string> = { CONFIRMED: 'Confirmada', PENDING: 'Pendiente', CANCELLED: 'Cancelada', REJECTED: 'Rechazada' };
+    const PURPOSE_LABELS: Record<string, string> = { LEARN: 'Aprender', PRODUCE: 'Producir', DESIGN: 'Diseñar', REUNION: 'Reunión' };
+    const ENROLL_LABELS: Record<string, string> = { CONFIRMED: 'Inscrita', WAITLIST: 'Lista de espera' };
+
+    const bookingRows = bookings.map((b) => ({
+      Fecha: fmtDate(new Date(b.startTime)),
+      'Hora Inicio': fmtTime(new Date(b.startTime)),
+      'Hora Fin': fmtTime(new Date(b.endTime)),
+      Recurso: (b.resource as { name: string }).name,
+      Categoría: (b.resource as { category: { name: string } }).category.name,
+      Propósito: PURPOSE_LABELS[b.purpose] ?? b.purpose,
+      'Ítem a Producir': b.produceItem ?? '',
+      Cantidad: b.produceQty ?? '',
+      Estado: STATUS_LABELS[b.status] ?? b.status,
+      Notas: b.notes ?? '',
+      'Fecha de Reserva': fmtDate(new Date(b.createdAt)),
+    }));
+
+    const enrollmentRows = enrollments.map((e) => ({
+      Capacitación: e.training.title,
+      Fecha: fmtDate(new Date(e.training.startTime)),
+      'Hora Inicio': fmtTime(new Date(e.training.startTime)),
+      'Hora Fin': fmtTime(new Date(e.training.endTime)),
+      Estado: ENROLL_LABELS[e.status] ?? e.status,
+      'Fecha Inscripción': fmtDate(new Date(e.createdAt)),
+    }));
+
+    const certRows = certifications.map((c) => ({
+      Categoría: (c.category as { name: string } | null)?.name ?? '',
+      'Certificada el': fmtDate(new Date(c.certifiedAt)),
+      'Certificada por': (c.certifier as { name: string } | null)?.name ?? '',
+      Notas: c.notes ?? '',
+    }));
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(bookingRows.length ? bookingRows : [{ Info: 'Sin reservas en los últimos 6 meses' }]), 'Reservas');
+    xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(enrollmentRows.length ? enrollmentRows : [{ Info: 'Sin capacitaciones en los últimos 6 meses' }]), 'Capacitaciones');
+    xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(certRows.length ? certRows : [{ Info: 'Sin certificaciones' }]), 'Certificaciones');
+
+    const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const safeName = user.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="usuaria_${safeName}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al exportar datos del usuario' });
+  }
+};
+
 export const getUserSummary = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params;

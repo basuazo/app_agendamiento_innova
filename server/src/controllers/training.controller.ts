@@ -310,8 +310,13 @@ export const exportTrainings = async (req: AuthRequest, res: Response): Promise<
   try {
     const spaceId = resolveSpaceId(req);
 
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const trainings = await prisma.training.findMany({
-      where: spaceId ? { spaceId } : {},
+      where: {
+        ...(spaceId ? { spaceId } : {}),
+        startTime: { gte: sixMonthsAgo },
+      },
       include: {
         enrollments: {
           include: {

@@ -170,6 +170,9 @@ export interface SpaceSettings {
   maxCapacity: number;        // aforo general (máquinas)
   maxCapacityReunion: number; // aforo sala de reuniones
   maxBookingMinutes: number;  // duración máxima de reserva en minutos (30–240, intervalos de 30)
+  lunchBreakEnabled: boolean;
+  lunchBreakStart: string | null;
+  lunchBreakEnd: string | null;
 }
 
 export interface Maintenance {

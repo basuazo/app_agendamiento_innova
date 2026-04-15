@@ -210,7 +210,7 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
 
     const durationMs = endTime.getTime() - startTime.getTime();
     const spaceForLimit = resource
-      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true } })
+      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true, lunchBreakEnabled: true, lunchBreakStart: true, lunchBreakEnd: true } })
       : null;
     const maxMs = (spaceForLimit?.maxBookingMinutes ?? 240) * 60 * 1000;
     const maxLabel = (() => {
@@ -250,6 +250,16 @@ export const createBooking = async (req: AuthRequest, res: Response): Promise<vo
           res.status(400).json({ error: `El espacio cierra a las ${bh.closeTime}` });
           return;
         }
+      }
+    }
+
+    // Validar hora de colación (solo para reservas no excepcionales)
+    if (!isExceptional && spaceForLimit?.lunchBreakEnabled && spaceForLimit.lunchBreakStart && spaceForLimit.lunchBreakEnd && localStartTime && localEndTime) {
+      const lb = spaceForLimit.lunchBreakStart;
+      const le = spaceForLimit.lunchBreakEnd;
+      if (localStartTime < le && localEndTime > lb) {
+        res.status(400).json({ error: `No se puede agendar en horario de colación. Debes agendar antes de las ${lb} y después de las ${le}` });
+        return;
       }
     }
 
@@ -481,7 +491,7 @@ export const updateBooking = async (req: AuthRequest, res: Response): Promise<vo
       select: { spaceId: true, capacity: true },
     });
     const spaceForLimit = resource
-      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true } })
+      ? await prisma.space.findUnique({ where: { id: resource.spaceId }, select: { maxBookingMinutes: true, lunchBreakEnabled: true, lunchBreakStart: true, lunchBreakEnd: true } })
       : null;
     const durationMs = endTime.getTime() - startTime.getTime();
     const maxMs = (spaceForLimit?.maxBookingMinutes ?? 240) * 60 * 1000;
@@ -513,6 +523,16 @@ export const updateBooking = async (req: AuthRequest, res: Response): Promise<vo
           res.status(400).json({ error: `El espacio cierra a las ${bh.closeTime}` });
           return;
         }
+      }
+    }
+
+    // Validar hora de colación (solo para reservas no excepcionales)
+    if (!booking.isExceptional && spaceForLimit?.lunchBreakEnabled && spaceForLimit.lunchBreakStart && spaceForLimit.lunchBreakEnd && localStartTime && localEndTime) {
+      const lb = spaceForLimit.lunchBreakStart;
+      const le = spaceForLimit.lunchBreakEnd;
+      if (localStartTime < le && localEndTime > lb) {
+        res.status(400).json({ error: `No se puede agendar en horario de colación. Debes agendar antes de las ${lb} y después de las ${le}` });
+        return;
       }
     }
 
@@ -709,8 +729,13 @@ const STATUS_LABELS: Record<string, string> = {
 export const exportBookings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const spaceId = resolveSpaceId(req);
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
     const bookings = await prisma.booking.findMany({
-      where: spaceId ? { resource: { spaceId } } : {},
+      where: {
+        ...(spaceId ? { resource: { spaceId } } : {}),
+        startTime: { gte: sixMonthsAgo },
+      },
       include: BOOKING_INCLUDE,
       orderBy: { startTime: 'desc' },
     });

@@ -54,6 +54,9 @@ model Space {
   maxCapacity         Int      @default(12)
   maxCapacityReunion  Int      @default(12)
   maxBookingMinutes   Int      @default(240) // límite de duración de reserva en minutos (30–240, intervalos de 30)
+  lunchBreakEnabled   Boolean  @default(false)
+  lunchBreakStart     String?  // "13:00" — hora de inicio de colación
+  lunchBreakEnd       String?  // "14:00" — hora de término de colación
   logoUrl             String?
   primaryColor        String?
   createdAt           DateTime @default(now())

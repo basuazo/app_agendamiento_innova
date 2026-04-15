@@ -239,7 +239,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 |--------|------------|
 | `Space` | Centro productivo. Agrupa usuarios, categorias, recursos, trainings, comentarios y horarios. Tiene `maxCapacity` (aforo maquinas), `maxCapacityReunion` (aforo sala) y `maxBookingMinutes` (duracion maxima de reserva, 30–240 en intervalos de 30) |
 | `Category` | Categoria de maquina dinamica, pertenece a un Space (reemplaza enum ResourceCategory) |
-| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_TECNICA/LIDER_COMUNITARIA/USER, isVerified, spaceId (null para SUPER_ADMIN), phone (opcional) y deletedAt (soft delete: null = activo) |
+| `User` | Usuarias con role SUPER_ADMIN/ADMIN/LIDER_COMUNITARIA/USER, isVerified, spaceId (null para SUPER_ADMIN), phone (opcional) y deletedAt (soft delete: null = activo) |
 | `Resource` | Maquinas/equipos con categoryId, spaceId y requiresCertification |
 | `Booking` | Reservas con status, purpose, campos especiales segun categoria. `isExceptional Boolean @default(false)`: omite validaciones de horario y duracion maxima (solo roles ADMIN/SUPER_ADMIN) |
 | `Maintenance` | Periodo de cierre del espacio. Campos: title, description?, startTime, endTime, spaceId, createdBy. Bloquea la creacion de cualquier reserva (normal o excepcional) que se solape con el periodo |
@@ -254,7 +254,7 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\
 ### Enums
 
 ```
-Role:             SUPER_ADMIN | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA | USER
+Role:             SUPER_ADMIN | ADMIN | LIDER_COMUNITARIA | USER
 
 BookingStatus:    PENDING | CONFIRMED | CANCELLED | REJECTED
 BookingPurpose:   LEARN | PRODUCE | DESIGN | REUNION
@@ -287,31 +287,30 @@ AuditAction:      USER_CREATED | USER_DELETED | USER_ROLE_CHANGED | USER_VERIFIE
 ### Roles
 - `SUPER_ADMIN`: acceso a todos los espacios. No tiene spaceId propio. Selecciona el espacio activo en el Navbar.
 - `ADMIN`: administra su espacio. Tiene spaceId.
-- `LIDER_TECNICA`: gestiona certificaciones, capacitaciones y recursos. Tiene spaceId.
-- `LIDER_COMUNITARIA`: aprueba reservas, gestiona categorias y recursos, verifica usuarios. Tiene spaceId.
+- `LIDER_COMUNITARIA`: aprueba reservas, gestiona categorias, recursos y certificaciones, verifica y crea/edita usuarios, gestiona la comunidad. Tiene spaceId.
 - `USER`: usuaria del espacio al que pertenece.
 
 **Matriz de permisos de roles elevados:**
 
-| Endpoint / accion | ADMIN | LIDER_TECNICA | LIDER_COMUNITARIA |
-|---|:---:|:---:|:---:|
-| Recursos (CRUD) | ✓ | ✓ | ✓ |
-| Categorias (CRUD) | ✓ | — | ✓ |
-| Certificaciones (admin) | ✓ | ✓ | ✓ |
-| Capacitaciones (crear/borrar/exportar) | ✓ | ✓ | — |
-| Inscribir/desinscribir otras usuarias en capacitaciones | ✓ | ✓ | ✓ |
-| Reservas (aprobar/rechazar/ver todas) | ✓ | — | ✓ |
-| Usuarios (ver lista) | ✓ | ✓ | ✓ |
-| Usuarios (verificar) | ✓ | — | ✓ |
-| Usuarios (crear/editar/borrar/rol) | ✓ | — | — |
-| Horarios de negocio | ✓ | — | — |
-| Agendar por otra usuaria (targetUserId) | ✓ | ✓ | ✓ |
+| Endpoint / accion | ADMIN | LIDER_COMUNITARIA |
+|---|:---:|:---:|
+| Recursos (CRUD) | ✓ | ✓ |
+| Categorias (CRUD) | ✓ | ✓ |
+| Certificaciones (admin) | ✓ | ✓ |
+| Capacitaciones (crear/borrar/exportar) | ✓ | — |
+| Inscribir/desinscribir otras usuarias en capacitaciones | ✓ | ✓ |
+| Reservas (aprobar/rechazar/ver todas) | ✓ | ✓ |
+| Usuarios (ver lista) | ✓ | ✓ |
+| Usuarios (verificar) | ✓ | ✓ |
+| Usuarios (crear/editar sin cambiar contraseña) | ✓ | ✓ |
+| Usuarios (eliminar/cambiar contraseña/cambiar rol) | ✓ | — |
+| Horarios de negocio | ✓ | — |
+| Agendar por otra usuaria (targetUserId) | ✓ | ✓ |
 
 **Middlewares en `role.middleware.ts`:**
 - `requireAdmin` → ADMIN + SUPER_ADMIN
-- `requireTecnica` → ADMIN + SUPER_ADMIN + LIDER_TECNICA
 - `requireComunitaria` → ADMIN + SUPER_ADMIN + LIDER_COMUNITARIA
-- `requireElevated` → todos los roles no-USER
+- `requireElevated` → todos los roles no-USER (equivale a requireComunitaria)
 - `requireAnyOf(...roles)` → factory generica
 
 ### Header X-Space-Id
@@ -412,7 +411,7 @@ GET      /api/health               <- health check con DB
 - date-fns NO instalado en server/ — usar native JS (fmtDate/fmtTime helpers)
 - No usar mapas estaticos de colores/labels en frontend — usar `r.category?.color` y `r.category?.name`
 - **Edicion de reservas:** el frontend abre el wizard completo pre-relleno via prop `editBookings?: Booking[]`. Al confirmar, el wizard cancela los bookings originales y crea los nuevos (estrategia cancelar+recrear). El backend `PATCH /api/bookings/:id` sigue disponible para cancelaciones individuales pero ya no se usa para edicion desde el calendario. El boton "Editar" llama `onEditBooking(bookings: Booking[])` en `CalendarView` → `handleEditBooking` en `CalendarPage`.
-- **Reservas excepcionales:** `isExceptional=true` en el body de `POST /api/bookings` omite: validacion de duracion maxima y validacion de horario de negocio. Las mantenciones siguen bloqueando. Solo roles elevados pueden crear reservas excepcionales; el flag es ignorado para USER.
+- **Reservas excepcionales:** `isExceptional=true` en el body de `POST /api/bookings` omite: validacion de duracion maxima y validacion de horario de negocio. Las mantenciones siguen bloqueando. Solo ADMIN/SUPER_ADMIN pueden crear reservas excepcionales; el flag es ignorado para otros roles.
 - **Mantenciones:** bloquean la creacion de cualquier reserva (normal o excepcional) cuyo rango se solape (`startA < endB AND endA > startB`). El backend devuelve 409 con nombre de la mantención. No hay limite de duracion para las mantenciones.
 - **Certificacion directa:** roles elevados certifican/revocan desde `/admin/certifications`. No hay flujo de solicitud (el modelo `CertificationRequest` y enum `CertReqStatus` fueron eliminados del schema). `POST /admin/certifications` hace `upsert` en `Certification`; `DELETE /admin/certifications/:id` la elimina.
 - **Revocacion de certificacion:** borra la fila `Certification`. La usuaria vuelve al estado "sin certificacion" y sus proximas reservas en esa categoria seran PENDING hasta ser re-certificada.
@@ -531,17 +530,18 @@ GET      /api/health               <- health check con DB
 - Detalle de reserva → boton "← Volver" restaura el slotModal (`returnSlot` en estado de detalle)
 - Click en celda vacía → abre BookingWizard (o actionChoice si rol elevado)
 - `hoursLoaded` state en CalendarPage: CalendarView no monta hasta que businessHours se cargue
-- `isAdmin = ['ADMIN','SUPER_ADMIN','LIDER_TECNICA','LIDER_COMUNITARIA'].includes(role)` en CalendarPage
+- `isAdmin = ['ADMIN','SUPER_ADMIN','LIDER_COMUNITARIA'].includes(role)` en CalendarPage
 - Tiempo flexible de reserva: inputs `startTime`/`endTime` tipo `time`, maximo 4 horas
 - Validacion en backend: `endTime > startTime`, duracion <= 4h
 - CSS inyectado via `<style>` para mostrar `+` en hover de celdas vacías
 
-### Feature: Roles granulares (LIDER_TECNICA / LIDER_COMUNITARIA)
-- Dos nuevos roles con permisos diferenciados (ver matriz en seccion Arquitectura multi-espacio)
-- `requireAnyOf(...roles)` factory en `role.middleware.ts`; middlewares especificos: `requireTecnica`, `requireComunitaria`, `requireElevated`
+### Feature: Roles (ADMIN / LIDER_COMUNITARIA)
+- El rol `LIDER_TECNICA` fue eliminado (migracion `20260405000000_remove_lider_tecnica_role`). Los usuarios existentes con ese rol fueron reasignados a `LIDER_COMUNITARIA`
+- `requireAnyOf(...roles)` factory en `role.middleware.ts`; middlewares: `requireAdmin`, `requireComunitaria`, `requireElevated`
 - Navbar muestra items de menu Admin filtrados segun el rol del usuario logueado
-- UsersPage: badge de color por rol (indigo=SUPER_ADMIN, purple=ADMIN, blue=LIDER_TECNICA, teal=LIDER_COMUNITARIA), selector de rol en formulario incluye nuevos roles, boton de toggle rapido de rol eliminado
-- Migracion: `20260311193438_add_lider_roles`
+- `canManageTrainings` en Navbar y CalendarPage: solo ADMIN y SUPER_ADMIN (no LIDER_COMUNITARIA)
+- UsersPage: badge de color por rol (indigo=SUPER_ADMIN, purple=ADMIN, teal=LIDER_COMUNITARIA)
+- Migracion original de roles: `20260311193438_add_lider_roles`
 
 ### Feature: Tablas admin responsivas (scroll horizontal en movil)
 - Todas las tablas admin usan `overflow-x-auto` + `min-w-full` (no `w-full`)
@@ -575,12 +575,12 @@ GET      /api/health               <- health check con DB
 - Endpoints `POST /api/trainings/:id/enroll` y `DELETE /api/trainings/:id/enroll` aceptan `{ targetUserId }` en el body
 - Si `targetUserId` presente y actor es rol elevado (ELEVATED_ROLES), se inscribe/desincribe a esa usuaria en lugar del actor
 - Error 403 si un USER intenta usar `targetUserId`
-- **`GET /api/users` usa `requireElevated`** (antes `requireComunitaria`): LIDER_TECNICA ahora puede listar usuarios del espacio, necesario para el selector de inscripcion en TrainingsPage
+- **`GET /api/users` usa `requireElevated`**: LIDER_COMUNITARIA puede listar usuarios del espacio, necesario para el selector de inscripcion en TrainingsPage
 - **`TrainingsPage.tsx`**: al expandir una sesion, muestra un **combobox de busqueda** (componente `UserCombobox` inline) que filtra las usuarias no inscritas aun por nombre o email, y un boton "Inscribir". Cada fila de inscritas tiene un boton `✕` para desinscribir individualmente
 - `UserCombobox`: input tipo texto con dropdown filtrado, cierra al hacer clic fuera (`mousedown` listener), resetea al seleccionar
 
 ### Feature: Exportacion de capacitaciones a Excel
-- Ruta: `GET /api/admin/trainings/export` (requireTecnica)
+- Ruta: `GET /api/admin/trainings/export` (requireAdmin)
 - Genera archivo `capacitaciones.xlsx` con una fila por inscripcion (capacitaciones sin inscritas aparecen como fila con campos de usuaria vacios)
 - Columnas: Capacitacion, Descripcion, Fecha, Hora Inicio, Hora Fin, Cupos totales, Confirmadas, Lista de espera, Usuaria inscrita, Email usuaria, Estado inscripcion, Fecha inscripcion
 - Frontend: boton "Exportar Excel" en `TrainingsPage.tsx` junto al boton de nueva capacitacion; `trainingService.exportAll()` con `responseType: 'blob'`
@@ -769,6 +769,26 @@ GET      /api/health               <- health check con DB
 - Warning en tiempo real bajo el color picker: `{isOrangeHue(form.color) && <p className="text-xs text-amber-600 mt-1">⚠️ El naranja/ámbar está reservado para Capacitaciones</p>}`
 - En CalendarView, los eventos de capacitaciones usan el color naranja/ambar (`#f97316` o similar) para diferenciarse visualmente de las categorias de maquinas
 
+### Feature: Modal de produccion en BookingWizard
+- Al seleccionar proposito `PRODUCE` y avanzar desde SCHEDULE, en vez de ir directo a MACHINES se abre una mini-modal overlay que pide **Articulo a producir** (obligatorio) y **Cantidad** (obligatorio, min 1)
+- El boton de SCHEDULE dice "Continuar → ¿Qué producirás?" para indicar el paso intermedio
+- Al confirmar la modal, se avanza a MACHINES. "Volver" cierra la modal sin avanzar
+- En el paso DETAILS, en lugar de los campos de producir se muestra un resumen (articulo + cantidad) con boton "Editar" que reabre la modal
+- `showProduceModal: boolean` estado en el wizard; `handleProduceModalConfirm()` valida y avanza a MACHINES
+- En modo edicion de reserva PRODUCE, el boton "Editar" del resumen en DETAILS tambien reabre la modal
+
+### Feature: LIDER_COMUNITARIA puede crear y editar usuarios
+- `POST /users` y `PATCH /users/:id` cambiados de `requireAdmin` a `requireComunitaria`
+- **Backend protecciones:**
+  - `updateUser`: si el actor es `LIDER_COMUNITARIA` y envia `password` → 403 (no puede cambiar contraseñas)
+  - `createUser`: si el actor es `LIDER_COMUNITARIA` y el `role` no es `USER` → 403 (solo puede crear con rol Usuario)
+- **Frontend (`UsersPage`):**
+  - `canCreateEditUsers` = ADMIN + SUPER_ADMIN + LIDER_COMUNITARIA → muestra botones "Nueva Usuaria" y "Editar"
+  - `canDeleteUsers` = ADMIN + SUPER_ADMIN → muestra botones "Eliminar" y "Exportar Excel"
+  - `canChangePassword` = ADMIN + SUPER_ADMIN → muestra campo contraseña en `EditUserModal`
+  - `canChangeRole` = ADMIN + SUPER_ADMIN → muestra selector de rol en `CreateUserModal` y `EditUserModal`
+  - LIDER_COMUNITARIA crea usuarios con rol fijo `USER` (sin selector de rol visible)
+
 ### Feature: Gradiente para reservas multi-maquina
 - Cuando una sesion tiene 2+ maquinas, el evento del calendario muestra un gradiente diagonal azul→violeta→rojo
 - Implementacion: el evento FullCalendar tiene `backgroundColor:'transparent'`; en `eventContent`, si `bGroup.length > 1`, se devuelve un `<div>` con `style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,#2563eb 0%,#7c3aed 50%,#dc2626 100%)', borderRadius:'inherit', overflow:'hidden' }}` y dentro el contenido de texto (nombre, "N maquinas · lista", proposito)
@@ -811,17 +831,18 @@ Todos con `isVerified=true`. Ejecutar desde `/server/`: `npm run seed`
 - **Inputs de hora:** usar `type="text"` con `placeholder="HH:MM"` y `maxLength={5}`. No usar `type="time"` — el browser controla la edicion segmento a segmento y no permite borrar todo el valor. Validar con regex `/^\d{2}:\d{2}$/` antes de parsear. Comparacion de horarios HH:MM como strings lexicograficas funciona correctamente.
 - **Validacion de horario de negocio sin timezone:** pasar `localDate` (YYYY-MM-DD), `localStartTime` y `localEndTime` (HH:MM) como campos adicionales en el body de creacion de reserva. El backend usa estos valores directamente contra `BusinessHours.openTime`/`closeTime` sin conversion de zona horaria. En el frontend, `new Date(date + 'T12:00:00').getDay()` para obtener el dia de la semana evita desfase UTC.
 - **Rutas estaticas antes de dinamicas en Express:** `/admin/trainings/export` debe declararse ANTES de `/admin/trainings/:id` para que Express no interprete "export" como un ID de capacitacion.
-- **GET /api/users ahora usa `requireElevated`:** LIDER_TECNICA puede listar usuarios del espacio (necesario para el combobox de inscripcion en TrainingsPage y CalendarPage). Antes solo `requireComunitaria` tenia acceso.
+- **GET /api/users usa `requireElevated`:** LIDER_COMUNITARIA puede listar usuarios del espacio (necesario para el combobox de inscripcion en TrainingsPage y CalendarPage).
 - **Soft delete de usuarios:** `deletedAt DateTime?` en User. `getUsers` filtra `deletedAt: null`. Login verifica `user.deletedAt`. `createUser` con email de usuario eliminado → reactiva con `update` en vez de crear nuevo registro (evita conflicto de unique constraint en email).
-- **Eliminacion de recursos:** `DELETE /api/resources/:id` — bloquea con 409 si hay reservas. Elimina `TrainingExemption` del recurso antes de borrar. El frontend muestra el error del backend en el toast.
+- **Eliminacion de recursos:** `DELETE /api/resources/:id` — bloquea con 409 solo si hay reservas PENDING o CONFIRMED con fecha futura. Reservas pasadas o canceladas no bloquean. La transaccion elimina primero todas las reservas del recurso (para evitar FK violation), luego las exenciones de capacitaciones, luego el recurso. Igual logica en `deleteCategory` para cada recurso de la categoria.
+- **Refetch silencioso en BookingsPage:** `load(silent?: boolean)` — cuando `silent=true` no muestra el spinner de carga. Los handlers de aprobar/rechazar/cancelar llaman `load(true)` para que la tabla se actualice en el acto sin flash visual.
 - **maxBookingMinutes en booking.controller:** en createBooking, la consulta a `space` para obtener `maxBookingMinutes` ocurre DESPUES de fetchear el resource (necesita `resource.spaceId`). En updateBooking, la consulta a resource incluye `spaceId` y se hace una segunda query para obtener `maxBookingMinutes` del space. No se puede mover la validacion antes del fetch del resource porque se necesita el spaceId.
 - **trust proxy en Render:** `app.set('trust proxy', 1)` debe declararse en `app.ts` ANTES de registrar los middlewares de rate-limit, para que `req.ip` sea la IP real del cliente (X-Forwarded-For) y no la IP del proxy de Render.
-- **isExceptional en booking.controller:** la flag solo se acepta si el actor es rol elevado (`['ADMIN','SUPER_ADMIN','LIDER_TECNICA','LIDER_COMUNITARIA'].includes(req.user.role)`). Un USER enviando `isExceptional: true` en el body es ignorado silenciosamente.
+- **isExceptional en booking.controller:** la flag solo se acepta si el actor es ADMIN o SUPER_ADMIN. Un USER u otro rol enviando `isExceptional: true` en el body es ignorado silenciosamente.
 - **Mantenciones bloquean todo:** el check de mantenciones en `createBooking` ocurre DESPUES del check de conflictos de reservas y aplica incluso si `isExceptional=true`. Es la ultima capa de validacion antes de crear.
 - **USER_SELECT en user.controller:** usar la constante `USER_SELECT` para todos los selects de usuarios en lugar de repetir los campos — garantiza consistencia entre `getUsers`, `createUser`, `updateUser` y `getUserSummary`.
 - **Rutas estaticas de usuarios:** `GET /users/export` y `GET /users/audit-logs` deben declararse ANTES de `GET /users/:id` en `user.routes.ts` para que Express no los interprete como IDs de usuario.
 - **UserDetailPage tabs:** usa `useState` para el tab activo y carga todos los datos desde el endpoint `/users/:id/summary` al montar. `ConfirmModal` se reutiliza para aprobar/rechazar/revocar.
-- **canManageMaintenance:** `user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'` — solo estos dos roles pueden crear, editar y eliminar mantenciones. LIDER_TECNICA y LIDER_COMUNITARIA solo ven las mantenciones en el calendario.
+- **canManageMaintenance:** `user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'` — solo estos dos roles pueden crear, editar y eliminar mantenciones. LIDER_COMUNITARIA solo ve las mantenciones en el calendario.
 - **onEditBooking en CalendarView:** reemplaza al anterior `onUpdateBooking`. Firma: `onEditBooking?: (bookings: Booking[]) => void`. Recibe el array de bookings del grupo (sesion) para que CalendarPage lo pase a BookingWizard via prop `editBookings`. No confundir con `onUpdateBooking` (eliminado).
 - **Agrupacion de reservas (ClusterItem):** el campo del item de cluster cambio de `booking: Booking` (singular) a `bookings: Booking[]` (array). Todos los lugares donde se accedia a `item.booking` deben usar `item.bookings[0]` para el primer booking o iterar el array. Igualmente `VisibleFCEvent.extendedProps.bookings` es siempre un array.
 - **Gradiente multi-maquina:** FullCalendar no soporta CSS gradients en `backgroundColor` — la solucion es poner `backgroundColor:'transparent'` en el evento y devolver un `<div>` con `position:absolute; inset:0` y el gradiente como `background` en `eventContent`. Necesita `borderRadius:'inherit'` para respetar el radio del evento FullCalendar.

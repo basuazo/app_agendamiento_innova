@@ -29,6 +29,7 @@ interface Props {
   preselectedDate?: Date;
   businessHours?: BusinessHours[];
   maxBookingMinutes?: number;
+  lunchBreak?: { enabled: boolean; start: string; end: string } | null;
   /** Si se provee, el wizard arranca en modo edición pre-rellenado con estos datos */
   editBookings?: Booking[];
 }
@@ -150,6 +151,7 @@ export default function BookingWizard({
   preselectedDate,
   businessHours = [],
   maxBookingMinutes = 240,
+  lunchBreak,
   editBookings,
 }: Props) {
   const isEditMode = !!editBookings?.length;
@@ -170,6 +172,8 @@ export default function BookingWizard({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [showProduceModal, setShowProduceModal] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [userSearch, setUserSearch] = useState('');
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   // Reiniciar al abrir
   useEffect(() => {
@@ -184,6 +188,8 @@ export default function BookingWizard({
       setConfirmCancel(false);
       setShowProduceModal(false);
       setExpandedCategories(new Set());
+      setUserSearch('');
+      setUserDropdownOpen(false);
       fetchAll();
       certificationService.getMyCertifications().then(setCertifications).catch(() => {});
       if (isElevated) {
@@ -282,6 +288,11 @@ export default function BookingWizard({
       if (!dayHours.isOpen) return 'El espacio no abre ese día';
       if (state.startTime < dayHours.openTime) return `El espacio abre a las ${dayHours.openTime}`;
       if (state.endTime > dayHours.closeTime) return `El espacio cierra a las ${dayHours.closeTime}`;
+    }
+    if (lunchBreak?.enabled && lunchBreak.start && lunchBreak.end) {
+      if (state.startTime < lunchBreak.end && state.endTime > lunchBreak.start) {
+        return `No se puede agendar en horario de colación. Debes agendar antes de las ${lunchBreak.start} y después de las ${lunchBreak.end}`;
+      }
     }
     return null;
   };
@@ -551,7 +562,7 @@ export default function BookingWizard({
             <input
               type="radio"
               checked={state.bookingForSelf}
-              onChange={() => setState((p) => ({ ...p, bookingForSelf: true, targetUserId: '' }))}
+              onChange={() => { setState((p) => ({ ...p, bookingForSelf: true, targetUserId: '' })); setUserSearch(''); setUserDropdownOpen(false); }}
               className="accent-brand-600"
             />
             <div>
@@ -571,20 +582,60 @@ export default function BookingWizard({
             />
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-900">Para otra usuaria</p>
-              <p className="text-xs text-gray-500 mb-2">Selecciona la persona</p>
-              {!state.bookingForSelf && (
-                <select
-                  value={state.targetUserId}
-                  onChange={(e) => set('targetUserId', e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                >
-                  <option value="">Seleccionar usuaria...</option>
-                  {adminUsers.map((u) => (
-                    <option key={u.id} value={u.id}>{u.name} — {u.email}</option>
-                  ))}
-                </select>
-              )}
+              <p className="text-xs text-gray-500 mb-2">Busca por nombre o email</p>
+              {!state.bookingForSelf && (() => {
+                const selectedUser = adminUsers.find((u) => u.id === state.targetUserId);
+                const filtered = adminUsers.filter((u) =>
+                  u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+                  u.email.toLowerCase().includes(userSearch.toLowerCase())
+                );
+                return (
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      value={userDropdownOpen ? userSearch : (selectedUser ? `${selectedUser.name} — ${selectedUser.email}` : userSearch)}
+                      onChange={(e) => {
+                        setUserSearch(e.target.value);
+                        set('targetUserId', '');
+                        setUserDropdownOpen(true);
+                      }}
+                      onFocus={() => {
+                        setUserSearch('');
+                        setUserDropdownOpen(true);
+                      }}
+                      onBlur={() => setUserDropdownOpen(false)}
+                      placeholder="Buscar usuaria..."
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    {userDropdownOpen && (
+                      <div
+                        className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+                        onMouseDown={(e) => e.preventDefault()}
+                      >
+                        {filtered.length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-gray-400">Sin resultados</p>
+                        ) : (
+                          filtered.map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50 transition-colors"
+                              onMouseDown={() => {
+                                set('targetUserId', u.id);
+                                setUserSearch('');
+                                setUserDropdownOpen(false);
+                              }}
+                            >
+                              <span className="font-medium text-gray-800">{u.name}</span>
+                              <span className="text-gray-400 ml-1">— {u.email}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </label>
         </div>

@@ -124,7 +124,6 @@ async function main() {
   console.log('🌱 Seeding database...');
 
   // Limpiar tablas en orden FK correcto
-  await prisma.certificationRequest.deleteMany();
   await prisma.certification.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.booking.deleteMany();
@@ -160,13 +159,13 @@ async function main() {
 
   const hashedPassword = await bcrypt.hash('password123', 10);
   const adminPassword = await bcrypt.hash('admin123', 10);
-  const superAdminPassword = await bcrypt.hash('superadmin123', 10);
+  const superAdminPassword = await bcrypt.hash('super123', 10);
 
   // ── Super Admin (sin spaceId) ────────────────────────────────────────────────
   await prisma.user.create({
     data: {
       name: 'Super Administrador',
-      email: 'superadmin@cowork.cl',
+      email: 'super@cowork.cl',
       password: superAdminPassword,
       role: 'SUPER_ADMIN' as Role,
       isVerified: true,
@@ -220,10 +219,6 @@ async function main() {
       certifiedById: admin.id,
     },
   });
-  await prisma.certificationRequest.create({
-    data: { userId: maria.id, categoryId: paCatIds['BORDADORA'], status: 'PENDING' },
-  });
-
   console.log('✅ Certificaciones de ejemplo creadas');
 
   // ── Reservas de prueba (Puente Alto) ────────────────────────────────────────
@@ -296,8 +291,8 @@ async function main() {
   console.log('✅ Comentarios creados');
   console.log('\n🎉 Seed completado exitosamente!\n');
   console.log('Credenciales:');
-  console.log('  Super Admin: superadmin@cowork.cl / superadmin123');
-  console.log('  Admin PA:    admin@cowork.cl       / admin123');
+  console.log('  Super Admin: super@cowork.cl  / super123');
+  console.log('  Admin PA:    admin@cowork.cl  / admin123');
   console.log('  User 1:      maria@test.cl          / password123');
   console.log('  User 2:      juan@test.cl           / password123');
   console.log('  User 3:      sofia@test.cl          / password123');

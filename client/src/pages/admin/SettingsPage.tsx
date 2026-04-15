@@ -28,6 +28,9 @@ export default function SettingsPage() {
   const [maxCapacity, setMaxCapacity] = useState<string>('12');
   const [maxCapacityReunion, setMaxCapacityReunion] = useState<string>('12');
   const [maxBookingMinutes, setMaxBookingMinutes] = useState<number>(240);
+  const [lunchBreakEnabled, setLunchBreakEnabled] = useState(false);
+  const [lunchBreakStart, setLunchBreakStart] = useState('13:00');
+  const [lunchBreakEnd, setLunchBreakEnd] = useState('14:00');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -51,6 +54,9 @@ export default function SettingsPage() {
       setMaxCapacity(String(data.maxCapacity));
       setMaxCapacityReunion(String(data.maxCapacityReunion));
       setMaxBookingMinutes(data.maxBookingMinutes ?? 240);
+      setLunchBreakEnabled(data.lunchBreakEnabled ?? false);
+      setLunchBreakStart(data.lunchBreakStart ?? '13:00');
+      setLunchBreakEnd(data.lunchBreakEnd ?? '14:00');
     }).catch(() => {
       toast.error('Error al cargar horarios');
     }).finally(() => {
@@ -71,9 +77,19 @@ export default function SettingsPage() {
       toast.error('El aforo debe ser un número mayor a 0');
       return;
     }
+    if (lunchBreakEnabled) {
+      if (!lunchBreakStart || !lunchBreakEnd) {
+        toast.error('Define hora de inicio y término del horario de colación');
+        return;
+      }
+      if (lunchBreakEnd <= lunchBreakStart) {
+        toast.error('La hora de término de colación debe ser posterior a la hora de inicio');
+        return;
+      }
+    }
     setIsSaving(true);
     try {
-      await settingsService.updateBusinessHours(days, parsedCapacity, parsedReunion, maxBookingMinutes);
+      await settingsService.updateBusinessHours(days, parsedCapacity, parsedReunion, maxBookingMinutes, lunchBreakEnabled, lunchBreakStart, lunchBreakEnd);
       toast.success('Configuración guardada correctamente');
     } catch {
       toast.error('Error al guardar configuración');
@@ -165,6 +181,55 @@ export default function SettingsPage() {
             return <option key={m} value={m}>{label}</option>;
           })}
         </select>
+      </div>
+
+      {/* Hora de colación */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-semibold text-gray-800">Horario de colación</h2>
+          <button
+            type="button"
+            onClick={() => setLunchBreakEnabled((v) => !v)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+              lunchBreakEnabled ? 'bg-brand-600' : 'bg-gray-200'
+            }`}
+            role="switch"
+            aria-checked={lunchBreakEnabled}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                lunchBreakEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Bloquea un rango horario diario para colación. Se marcará en rojo en el calendario y no se podrán crear reservas en ese horario.
+        </p>
+        {lunchBreakEnabled && (
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-gray-500 whitespace-nowrap">Desde</label>
+            <select
+              value={lunchBreakStart}
+              onChange={(e) => setLunchBreakStart(e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            >
+              {TIME_OPTIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <label className="text-xs text-gray-500 whitespace-nowrap">Hasta</label>
+            <select
+              value={lunchBreakEnd}
+              onChange={(e) => setLunchBreakEnd(e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+            >
+              {TIME_OPTIONS.filter((t) => t > lunchBreakStart).map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Horarios */}
